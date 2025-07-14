@@ -17,6 +17,25 @@ function promptForToken() {
   });
 }
 
+function promptForBlockNumber() {
+  return new Promise((resolve) => {
+    rl.question('Enter the starting block number (or press Enter to start from current block): ', (answer) => {
+      const blockNumber = answer.trim();
+      if (!blockNumber) {
+        resolve(null);
+      } else {
+        const parsed = parseInt(blockNumber);
+        if (isNaN(parsed) || parsed < 0) {
+          console.log('Invalid block number. Starting from current block.');
+          resolve(null);
+        } else {
+          resolve(parsed);
+        }
+      }
+    });
+  });
+}
+
 async function main() {
   const logger = new Logger(config.logging.level);
   
@@ -28,6 +47,7 @@ async function main() {
 
   // Get token from user input
   const targetToken = await promptForToken();
+  const startingBlock = await promptForBlockNumber();
   rl.close();
   
   if (!targetToken) {
@@ -41,13 +61,16 @@ async function main() {
   service.setupGracefulShutdown();
   
   try {
-    const started = await service.start(targetToken);
+    const started = await service.start(targetToken, startingBlock);
     if (!started) {
       logger.error('Failed to start service');
       process.exit(1);
     }
     
-    logger.info('✅ Service started successfully. Tracking buys for token:', { targetToken });
+    logger.info('✅ Service started successfully. Tracking buys for token:', { 
+      targetToken, 
+      startingBlock: startingBlock || 'current' 
+    });
     
     // Keep the process alive
     process.stdin.resume();

@@ -40,9 +40,10 @@ A backend service that tracks the first 100 buy transactions for a specific toke
    npm start
    ```
    
-4. **Enter a token mint address when prompted:**
+4. **Enter a token mint address and starting block when prompted:**
    ```
    Enter the token mint address to track: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+   Enter the starting block number (or press Enter to start from current block): 250000000
    ```
 
 5. **For development with auto-restart:**

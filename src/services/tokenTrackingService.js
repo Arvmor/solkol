@@ -22,7 +22,8 @@ export class TokenTrackingService {
   }
 
   async start(targetToken) {
-    this.logger.info('Starting Token Buy Tracking Service', { targetToken });
+  async start(targetToken, startingBlock = null) {
+    this.logger.info('Starting Token Buy Tracking Service', { targetToken, startingBlock });
     
     // Validate token mint address
     if (!this.isValidTokenMint(targetToken)) {
@@ -31,7 +32,7 @@ export class TokenTrackingService {
     }
 
     // Set target token
-    this.buyTracker.setTargetToken(targetToken);
+    this.buyTracker.setTargetToken(targetToken, startingBlock);
     
     // Initialize RPC service
     const initialized = await this.rpcService.initialize();
@@ -69,6 +70,11 @@ export class TokenTrackingService {
   }
 
   async onNewBlock(block, slot) {
+    // Skip blocks before our starting block if specified
+    if (this.buyTracker.startingBlock && slot < this.buyTracker.startingBlock) {
+      return;
+    }
+
     if (this.buyTracker.isTrackingComplete()) {
       this.logger.info('Tracking complete, stopping service');
       this.stop();

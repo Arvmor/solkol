@@ -7,20 +7,31 @@ export class TokenBuyTracker {
     this.instructionDecoder = instructionDecoder;
     this.logger = new Logger(config.logging.level);
     this.targetToken = null;
+    this.startingBlock = null;
     this.detectedBuys = [];
     this.maxBuys = 100;
     this.isComplete = false;
   }
 
-  setTargetToken(tokenMint) {
+  setTargetToken(tokenMint, startingBlock = null) {
     this.targetToken = tokenMint;
+    this.startingBlock = startingBlock;
     this.detectedBuys = [];
     this.isComplete = false;
-    this.logger.info('Target token set', { tokenMint, maxBuys: this.maxBuys });
+    this.logger.info('Target token set', { 
+      tokenMint, 
+      startingBlock, 
+      maxBuys: this.maxBuys 
+    });
   }
 
   async detectBuysInTransaction(transaction, signature) {
     if (!this.targetToken || this.isComplete) {
+      return [];
+    }
+
+    // Skip transactions before our starting block if specified
+    if (this.startingBlock && transaction.slot < this.startingBlock) {
       return [];
     }
 
