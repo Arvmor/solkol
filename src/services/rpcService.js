@@ -4,22 +4,65 @@ import { Logger } from './logger.js';
 
 export class SolanaRPCService {
   constructor() {
-    this.connection = new Connection(config.solana.rpcUrl, {
-      commitment: config.solana.commitment,
-      confirmTransactionInitialTimeout: 60000,
-    });
     this.logger = new Logger(config.logging.level);
     this.currentSlot = null;
     this.isRunning = false;
     this.retryCount = 0;
+    this.rateLimitDelay = config.solana.requestDelay;
+    this.lastRequestTime = 0;
+    this.requestCount = 0;
+    this.requestWindowStart = Date.now();
+    this.consecutiveRateLimitErrors = 0;
+    
+    // Fallback RPC endpoints
+    this.rpcEndpoints = [
+      config.solana.rpcUrl,
+      'https://solana-api.projectserum.com',
+      'https://rpc.ankr.com/solana',
+      'https://mainnet.rpcpool.com',
+    ];
+    this.currentRpcIndex = 0;
+    
+    this.connection = new Connection(this.rpcEndpoints[this.currentRpcIndex], {
+      commitment: config.solana.commitment,
+      confirmTransactionInitialTimeout: 60000,
+    });
+  }
+
+  switchRpcEndpoint() {
+    this.currentRpcIndex = (this.currentRpcIndex + 1) % this.rpcEndpoints.length;
+    const newEndpoint = this.rpcEndpoints[this.currentRpcIndex];
+    
+    this.logger.warn('Switching RPC endpoint due to rate limiting', {
+      newEndpoint,
+      endpointIndex: this.currentRpcIndex,
+      totalEndpoints: this.rpcEndpoints.length
+    });
+    
+    this.connection = new Connection(newEndpoint, {
+      commitment: config.solana.commitment,
+      confirmTransactionInitialTimeout: 60000,
+    });
+    
+    // Reset rate limiting state for new endpoint
+    this.rateLimitDelay = config.solana.requestDelay;
+    this.consecutiveRateLimitErrors = 0;
+    this.requestCount = 0;
+    this.requestWindowStart = Date.now();
   }
 
   async initialize() {
     try {
+      await this.throttleRequest();
       this.currentSlot = await this.connection.getSlot();
       this.logger.info('RPC Service initialized', { 
         currentSlot: this.currentSlot,
-        rpcUrl: config.solana.rpcUrl 
+        rpcUrl: this.rpcEndpoints[this.currentRpcIndex],
+        rateLimitSettings: {
+          maxRequestsPerSecond: config.solana.maxRequestsPerSecond,
+          requestDelay: config.solana.requestDelay,
+          slotPollInterval: config.solana.slotPollInterval
+        }
       });
       return true;
     } catch (error) {
@@ -28,21 +71,70 @@ export class SolanaRPCService {
     }
   }
 
+  async throttleRequest() {
+    const now = Date.now();
+    
+    // Reset request count if window has passed
+    if (now - this.requestWindowStart >= 1000) {
+      this.requestCount = 0;
+      this.requestWindowStart = now;
+    }
+    
+    // Check if we're within rate limits
+    if (this.requestCount >= config.solana.maxRequestsPerSecond) {
+      const waitTime = 1000 - (now - this.requestWindowStart);
+      if (waitTime > 0) {
+        this.logger.debug('Rate limit reached, waiting', { waitTime, requestCount: this.requestCount });
+        await this.sleep(waitTime);
+        return this.throttleRequest(); // Recursive call after waiting
+      }
+    }
+    
+    // Ensure minimum delay between requests
+    const timeSinceLastRequest = now - this.lastRequestTime;
+    if (timeSinceLastRequest < this.rateLimitDelay) {
+      const waitTime = this.rateLimitDelay - timeSinceLastRequest;
+      await this.sleep(waitTime);
+    }
+    
+    this.lastRequestTime = Date.now();
+    this.requestCount++;
+  }
+
   async startSlotPolling(onNewBlock) {
     this.isRunning = true;
-    this.logger.info('Starting slot polling');
+    this.logger.info('Starting slot polling with conservative rate limiting');
 
     while (this.isRunning) {
       try {
         const startTime = Date.now();
+        await this.throttleRequest();
         const latestSlot = await this.connection.getSlot();
         
         if (latestSlot > this.currentSlot) {
-          // Process all slots between current and latest
-          for (let slot = this.currentSlot + 1; slot <= latestSlot; slot++) {
+          // Process slots with very conservative limits
+          const slotsToProcess = Math.min(
+            latestSlot - this.currentSlot, 
+            config.solana.maxSlotsPerBatch
+          );
+          
+          this.logger.debug('Processing slots', { 
+            currentSlot: this.currentSlot,
+            latestSlot,
+            slotsToProcess,
+            totalSlotsAvailable: latestSlot - this.currentSlot
+          });
+          
+          for (let i = 0; i < slotsToProcess; i++) {
+            const slot = this.currentSlot + 1 + i;
             await this.processSlot(slot, onNewBlock);
+            
+            // Add longer delay between slot processing
+            if (i < slotsToProcess - 1) {
+              await this.sleep(config.solana.slotProcessingDelay);
+            }
           }
-          this.currentSlot = latestSlot;
+          this.currentSlot = this.currentSlot + slotsToProcess;
         }
 
         if (config.logging.enablePerformanceLogs) {
@@ -51,11 +143,12 @@ export class SolanaRPCService {
         }
 
         this.retryCount = 0; // Reset retry count on success
+        this.consecutiveRateLimitErrors = 0; // Reset consecutive rate limit errors
+        
         await this.sleep(config.solana.slotPollInterval);
 
       } catch (error) {
-        this.logger.error('Error in slot polling', { error: error.message });
-        await this.handleRetry();
+        await this.handleRetry(error);
       }
     }
   }
@@ -63,6 +156,7 @@ export class SolanaRPCService {
   async processSlot(slot, onNewBlock) {
     try {
       const startTime = Date.now();
+      await this.throttleRequest();
       const block = await this.connection.getBlock(slot, {
         maxSupportedTransactionVersion: 0,
         transactionDetails: 'full',
@@ -81,13 +175,54 @@ export class SolanaRPCService {
       }
     } catch (error) {
       this.logger.error('Error processing slot', { slot, error: error.message });
+      // Don't throw here to avoid stopping the entire polling loop
     }
   }
 
-  async handleRetry() {
+  async handleRetry(error) {
     this.retryCount++;
+    
+    // Special handling for rate limit errors (429)
+    if (error.message && error.message.includes('429')) {
+      this.consecutiveRateLimitErrors++;
+      
+      this.logger.warn('Rate limit hit, implementing aggressive backoff', { 
+        attempt: this.retryCount,
+        consecutiveRateLimitErrors: this.consecutiveRateLimitErrors,
+        currentDelay: this.rateLimitDelay 
+      });
+      
+      // Switch RPC endpoint if we've hit rate limits too many times
+      if (this.consecutiveRateLimitErrors >= 3) {
+        this.switchRpcEndpoint();
+        this.consecutiveRateLimitErrors = 0;
+        this.retryCount = 0;
+        await this.sleep(5000); // Wait 5 seconds after switching
+        return;
+      }
+      
+      // More aggressive rate limit delay increase
+      this.rateLimitDelay = Math.min(
+        this.rateLimitDelay * config.solana.rateLimitBackoffMultiplier,
+        config.solana.maxRateLimitDelay
+      );
+      
+      // Calculate delay with consecutive error multiplier
+      const baseDelay = config.solana.retryDelay * Math.pow(2, this.retryCount - 1);
+      const consecutiveMultiplier = Math.pow(2, this.consecutiveRateLimitErrors - 1);
+      const delay = Math.min(
+        baseDelay * consecutiveMultiplier,
+        config.solana.maxRateLimitDelay
+      );
+      
+      this.logger.warn(`Rate limit backoff: waiting ${delay}ms (attempt ${this.retryCount}, consecutive: ${this.consecutiveRateLimitErrors})`);
+      await this.sleep(delay);
+      return;
+    }
+    
+    // Regular error handling
     if (this.retryCount >= config.solana.maxRetries) {
-      this.logger.error('Max retries reached, stopping service');
+      this.logger.error('Max retries reached, stopping service', { error: error.message });
       this.stop();
       return;
     }

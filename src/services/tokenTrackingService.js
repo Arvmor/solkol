@@ -19,10 +19,9 @@ export class TokenTrackingService {
     };
 
     this.isRunning = false;
+    this.debugCounter = 0;
   }
 
-  async start(targetToken) {
-  }
   async start(targetToken, startingBlock = null) {
     this.logger.info('Starting Token Buy Tracking Service', { targetToken, startingBlock });
     
@@ -89,15 +88,50 @@ export class TokenTrackingService {
 
       const blockStartTime = Date.now();
       let buyCount = 0;
+      let transactionsWithTargetToken = 0;
 
       // Process each transaction in the block
       for (const transaction of block.transactions) {
         if (transaction.meta && !transaction.meta.err) {
           // Only process successful transactions
           const signature = transaction.transaction.signatures[0];
+          
+          // Check if transaction involves target token before processing
+          const balanceChanges = await this.rpcService.getTokenBalanceChanges(transaction);
+          const targetTokenChanges = balanceChanges.filter(change => 
+            change.mint === this.buyTracker.targetToken
+          );
+          
+          if (targetTokenChanges.length > 0) {
+            transactionsWithTargetToken++;
+            this.debugCounter++;
+            
+            // Log every 5th transaction with target token for debugging
+            if (this.debugCounter % 5 === 0) {
+              this.logger.debug('Processing transaction with target token', {
+                signature: signature.substring(0, 8) + '...',
+                slot,
+                targetTokenChanges: targetTokenChanges.length,
+                allBalanceChanges: balanceChanges.length,
+                targetToken: this.buyTracker.targetToken
+              });
+            }
+          }
+          
           const buys = await this.buyTracker.detectBuysInTransaction(transaction, signature);
           buyCount += buys.length;
         }
+      }
+
+      // Log block summary
+      if (transactionsWithTargetToken > 0) {
+        this.logger.info('Block processed', {
+          slot,
+          totalTransactions: block.transactions.length,
+          transactionsWithTargetToken,
+          buysFound: buyCount,
+          progress: this.buyTracker.getProgress()
+        });
       }
 
       if (config.logging.enablePerformanceLogs && buyCount > 0) {

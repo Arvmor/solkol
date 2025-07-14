@@ -5,6 +5,7 @@ export class InstructionDecoder {
   constructor() {
     this.logger = new Logger(config.logging.level);
     this.dexPrograms = config.dexPrograms;
+    this.debugCounter = 0;
   }
 
   decodeTransaction(transaction) {
@@ -34,6 +35,18 @@ export class InstructionDecoder {
       });
     }
 
+    // Debug logging for transactions with many instructions
+    if (decodedInstructions.length > 0) {
+      this.debugCounter++;
+      if (this.debugCounter % 50 === 0) { // Log every 50th transaction with DEX instructions
+        this.logger.debug('Found transaction with DEX instructions', {
+          totalInstructions: decodedInstructions.length,
+          dexInstructions: decodedInstructions.filter(inst => inst.dex).length,
+          dexTypes: [...new Set(decodedInstructions.filter(inst => inst.dex).map(inst => inst.dex))]
+        });
+      }
+    }
+
     return decodedInstructions;
   }
 
@@ -59,6 +72,9 @@ export class InstructionDecoder {
       // Decode instruction data
       const instructionData = this.decodeInstructionData(instruction.data, dexInfo);
       
+      // More permissive: consider any instruction from a DEX program as potentially relevant
+      const isRelevant = this.isRelevantInstruction(instructionData, dexInfo);
+      
       return {
         index,
         programId: programIdString,
@@ -67,6 +83,7 @@ export class InstructionDecoder {
         data: instruction.data,
         decodedData: instructionData,
         isSwapInstruction: this.isSwapInstruction(instructionData, dexInfo),
+        isRelevantInstruction: isRelevant,
       };
     } catch (error) {
       this.logger.debug('Error decoding instruction', { error: error.message, index });
@@ -134,6 +151,17 @@ export class InstructionDecoder {
 
     const swapMethods = ['swap', 'route', 'shared_route', 'new_order'];
     return swapMethods.includes(decodedData.type.toLowerCase());
+  }
+
+  isRelevantInstruction(decodedData, dexInfo) {
+    if (!decodedData || !decodedData.type) {
+      return false;
+    }
+
+    // More permissive: consider any instruction from a DEX as potentially relevant
+    // This includes swap, route, new_order, and even unknown instructions from known DEXes
+    const relevantMethods = ['swap', 'route', 'shared_route', 'new_order', 'unknown'];
+    return relevantMethods.includes(decodedData.type.toLowerCase());
   }
 
   base58ToBytes(base58String) {

@@ -6,13 +6,21 @@ export const config = {
   solana: {
     rpcUrl: process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com',
     commitment: 'confirmed',
-    slotPollInterval: parseInt(process.env.SLOT_POLL_INTERVAL) || 400,
-    maxRetries: parseInt(process.env.MAX_RETRIES) || 3,
+    slotPollInterval: parseInt(process.env.SLOT_POLL_INTERVAL) || 5000, // Increased to 5 seconds
+    maxRetries: parseInt(process.env.MAX_RETRIES) || 5,
     retryDelay: parseInt(process.env.RETRY_DELAY) || 1000,
+    // Much more conservative rate limiting settings
+    maxRequestsPerSecond: parseInt(process.env.MAX_REQUESTS_PER_SECOND) || 3, // Reduced from 10 to 3
+    requestDelay: parseInt(process.env.REQUEST_DELAY) || 500, // Increased from 100ms to 500ms
+    rateLimitBackoffMultiplier: parseFloat(process.env.RATE_LIMIT_BACKOFF_MULTIPLIER) || 3.0, // Increased from 2.0 to 3.0
+    maxRateLimitDelay: parseInt(process.env.MAX_RATE_LIMIT_DELAY) || 60000, // Increased to 60 seconds max
+    // Additional conservative settings
+    maxSlotsPerBatch: parseInt(process.env.MAX_SLOTS_PER_BATCH) || 2, // Process max 2 slots at once
+    slotProcessingDelay: parseInt(process.env.SLOT_PROCESSING_DELAY) || 1000, // 1 second between slots
   },
   
   logging: {
-    level: process.env.LOG_LEVEL || 'info',
+    level: process.env.LOG_LEVEL || 'debug', // Changed from 'info' to 'debug'
     enablePerformanceLogs: process.env.ENABLE_PERFORMANCE_LOGS === 'true',
   },
   

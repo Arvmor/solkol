@@ -25,11 +25,13 @@ A backend service that tracks the first 100 buy transactions for a specific toke
 ## Quick Start
 
 1. **Install dependencies:**
+
    ```bash
    npm install
    ```
 
 2. **Configure environment (optional):**
+
    ```bash
    cp .env.example .env
    # Edit .env with your preferred settings
@@ -39,8 +41,8 @@ A backend service that tracks the first 100 buy transactions for a specific toke
    ```bash
    npm start
    ```
-   
 4. **Enter a token mint address and starting block when prompted:**
+
    ```
    Enter the token mint address to track: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
    Enter the starting block number (or press Enter to start from current block): 250000000
@@ -73,9 +75,15 @@ SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
 # SOLANA_RPC_URL=https://mainnet.helius-rpc.com/?api-key=YOUR_KEY
 # SOLANA_RPC_URL=https://api.triton.one/rpc/YOUR_KEY
 
-# Polling Configuration
-SLOT_POLL_INTERVAL=400
-MAX_RETRIES=3
+# Polling and Rate Limiting Configuration
+SLOT_POLL_INTERVAL=2000
+MAX_REQUESTS_PER_SECOND=10
+REQUEST_DELAY=100
+RATE_LIMIT_BACKOFF_MULTIPLIER=2.0
+MAX_RATE_LIMIT_DELAY=30000
+
+# Retry Configuration
+MAX_RETRIES=5
 RETRY_DELAY=1000
 
 # Logging Configuration
@@ -145,21 +153,41 @@ The service is built with a modular architecture:
 - **Logger** (`src/services/logger.js`): Structured logging system
 - **Configuration** (`src/config/index.js`): Centralized configuration management
 
-## Performance
+## Performance & Rate Limiting
 
-The service is optimized for efficient token tracking:
+The service is optimized for efficient token tracking with built-in rate limiting:
 
-- Efficient slot polling with configurable intervals
-- Targeted processing focusing only on transactions involving the target token
-- Automatic completion when 100 buys are found
-- Performance metrics and progress monitoring
-- Graceful error handling and retry logic
+- **Rate Limiting**: Configurable requests per second (default: 10 RPS) to avoid 429 errors
+- **Request Throttling**: Minimum delay between requests (default: 100ms)
+- **Exponential Backoff**: Automatic backoff when rate limits are hit
+- **Efficient Slot Polling**: Configurable intervals (default: 2 seconds) to reduce API load
+- **Targeted Processing**: Focuses only on transactions involving the target token
+- **Automatic Completion**: Stops when 100 buys are found
+- **Performance Metrics**: Real-time monitoring and progress tracking
+- **Graceful Error Handling**: Intelligent retry logic with exponential backoff
+
+### Rate Limiting Configuration
+
+The service includes sophisticated rate limiting to prevent 429 "Too Many Requests" errors:
+
+- `MAX_REQUESTS_PER_SECOND`: Maximum RPC requests per second (default: 10)
+- `REQUEST_DELAY`: Minimum delay between requests in milliseconds (default: 100)
+- `RATE_LIMIT_BACKOFF_MULTIPLIER`: Multiplier for exponential backoff (default: 2.0)
+- `MAX_RATE_LIMIT_DELAY`: Maximum delay when rate limited (default: 30000ms)
+
+When a 429 error is encountered, the service automatically:
+
+1. Increases the delay between requests exponentially
+2. Waits for the calculated backoff period
+3. Resumes with the new, more conservative rate
+4. Gradually returns to normal rates once the rate limit is no longer hit
 
 ## Extending
 
 To add support for new DEXes or modify tracking behavior:
 
 1. **Add new DEX support** in `src/config/index.js`:
+
    ```javascript
    newDex: {
      programId: 'NEW_PROGRAM_ID_HERE',
