@@ -1,29 +1,53 @@
-import { SwapDetectionService } from './services/swapService.js';
+import { TokenTrackingService } from './services/tokenTrackingService.js';
 import { Logger } from './services/logger.js';
 import { config } from './config/index.js';
+import readline from 'readline';
+
+// Create readline interface for user input
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout
+});
+
+function promptForToken() {
+  return new Promise((resolve) => {
+    rl.question('Enter the token mint address to track: ', (answer) => {
+      resolve(answer.trim());
+    });
+  });
+}
 
 async function main() {
   const logger = new Logger(config.logging.level);
   
-  logger.info('🚀 Solana On-Chain Swap Detector Starting...', {
+  logger.info('🚀 Solana Token Buy Tracker Starting...', {
     rpc_url: config.solana.rpcUrl,
     poll_interval: config.solana.slotPollInterval,
     supported_dexes: Object.keys(config.dexPrograms)
   });
 
-  const service = new SwapDetectionService();
+  // Get token from user input
+  const targetToken = await promptForToken();
+  rl.close();
+  
+  if (!targetToken) {
+    logger.error('No token provided');
+    process.exit(1);
+  }
+
+  const service = new TokenTrackingService();
   
   // Setup graceful shutdown
   service.setupGracefulShutdown();
   
   try {
-    const started = await service.start();
+    const started = await service.start(targetToken);
     if (!started) {
       logger.error('Failed to start service');
       process.exit(1);
     }
     
-    logger.info('✅ Service started successfully. Monitoring for swaps...');
+    logger.info('✅ Service started successfully. Tracking buys for token:', { targetToken });
     
     // Keep the process alive
     process.stdin.resume();
@@ -40,9 +64,12 @@ async function main() {
 // Handle CLI arguments
 if (process.argv.includes('--help') || process.argv.includes('-h')) {
   console.log(`
-Solana On-Chain Swap Detector
+Solana Token Buy Tracker
 
 Usage: npm start
+
+The service will prompt you to enter a token mint address and then track
+the first 100 buy transactions for that token across all supported DEXes.
 
 Environment Variables:
   SOLANA_RPC_URL          Solana RPC endpoint (default: public mainnet)
@@ -57,7 +84,11 @@ Supported DEXes:
   - Lifinity
   - Serum
 
-The service will output detected swaps in JSON format to stdout.
+The service will output detected buys in JSON format to stdout.
+
+Example token mint addresses:
+  - USDC: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+  - SOL: So11111111111111111111111111111111111111112
   `);
   process.exit(0);
 }
