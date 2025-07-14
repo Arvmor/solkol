@@ -1,6 +1,7 @@
 import { SolanaRPCService } from './rpcService.js';
 import { InstructionDecoder } from './instructionDecoder.js';
 import { TokenBuyTracker } from './tokenBuyTracker.js';
+import { TokenCreationDetector } from './tokenCreationDetector.js';
 import { Logger } from './logger.js';
 import { config } from '../config/index.js';
 
@@ -10,6 +11,7 @@ export class TokenTrackingService {
     this.rpcService = new SolanaRPCService();
     this.instructionDecoder = new InstructionDecoder();
     this.buyTracker = new TokenBuyTracker(this.rpcService, this.instructionDecoder);
+    this.creationDetector = new TokenCreationDetector(this.rpcService);
     
     this.stats = {
       totalBlocks: 0,
@@ -32,6 +34,16 @@ export class TokenTrackingService {
 
     // Set target token
     this.buyTracker.setTargetToken(targetToken);
+    
+    // Find and log token creation block
+    this.logger.info('Searching for token creation block...');
+    const creationInfo = await this.creationDetector.findTokenCreationBlock(targetToken);
+    
+    if (creationInfo) {
+      this.logger.info('Token creation block found successfully', creationInfo);
+    } else {
+      this.logger.warn('Could not find token creation block, continuing with buy tracking');
+    }
     
     // Initialize RPC service
     const initialized = await this.rpcService.initialize();
