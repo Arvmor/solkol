@@ -1,15 +1,18 @@
-# Solana On-Chain Swap Detector
+# Solana Token Buy Tracker
 
-A backend service that detects and logs token swap transactions on the Solana blockchain in near real-time.
+A backend service that tracks the first 100 buy transactions for a specific token on the Solana blockchain in near real-time.
 
 ## Features
 
+- **Token-Specific Tracking**: Focuses on buy transactions for a user-specified token
 - **Real-time Transaction Streaming**: Connects to Solana RPC and polls for new blocks
-- **Multi-DEX Support**: Detects swaps from Jupiter, Orca, Raydium, Lifinity, and Serum
+- **Multi-DEX Support**: Detects buys from Jupiter, Orca, Raydium, Lifinity, and Serum
 - **Instruction Decoding**: Decodes both top-level and inner instructions using Anchor discriminators
-- **Token Balance Analysis**: Analyzes pre/post token balances to identify swap amounts
-- **Structured Logging**: Outputs detected swaps in structured JSON format
-- **Performance Monitoring**: Tracks processing performance and service statistics
+- **Buy Analysis**: Analyzes pre/post token balances to identify buy transactions and amounts
+- **Progress Tracking**: Shows real-time progress toward finding 100 buys
+- **Structured Logging**: Outputs detected buys in structured JSON format
+- **Buyer Identification**: Attempts to identify the wallet address that made each purchase
+- **Price Calculation**: Calculates price per token for each buy transaction
 
 ## Supported DEXes
 
@@ -36,11 +39,26 @@ A backend service that detects and logs token swap transactions on the Solana bl
    ```bash
    npm start
    ```
+   
+4. **Enter a token mint address when prompted:**
+   ```
+   Enter the token mint address to track: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+   ```
 
-4. **For development with auto-restart:**
+5. **For development with auto-restart:**
    ```bash
    npm run dev
    ```
+
+## Example Token Addresses
+
+Here are some popular token mint addresses you can use for testing:
+
+- **USDC**: `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`
+- **SOL (Wrapped)**: `So11111111111111111111111111111111111111112`
+- **USDT**: `Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB`
+- **RAY (Raydium)**: `4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R`
+- **ORCA**: `orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE`
 
 ## Configuration
 
@@ -66,26 +84,51 @@ ENABLE_PERFORMANCE_LOGS=true
 
 ## Output Format
 
-Detected swaps are logged in structured JSON format:
+Detected buys are logged in structured JSON format:
 
 ```json
 {
   "timestamp": "2024-01-01T12:00:00.000Z",
   "level": "info",
-  "message": "SWAP_DETECTED",
+  "message": "BUY_DETECTED",
   "data": {
     "txHash": "5j7s8K9mE3x2N1pQ4rT6vW8zA9bC5dE7fG3hI4jK6lM8nO0pQ1rS3tU5vW7xY9zA1bC3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW3xY5zA7bC9dE1fG3hI5jK7lM9nO1pQ3rS5tU7vW9xY1zA3b",
     "dex": "Jupiter",
-    "tokenIn": "So11111111111111111111111111111111111111112",
-    "tokenOut": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-    "amountIn": "1000000000",
-    "amountOut": "50123456",
-    "decimalsIn": 9,
-    "decimalsOut": 6,
+    "targetToken": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "tokenSold": "So11111111111111111111111111111111111111112",
+    "amountBought": "50123456",
+    "amountSold": "1000000000",
+    "decimalsTarget": 6,
+    "decimalsSold": 9,
     "timestamp": 1704110400,
     "instructionType": "route",
     "programId": "JUP4Fb2cqiRUcaTHdrPC8h2gNsA2ETXiPDD33WcGuJB",
-    "slot": 250123456
+    "slot": 250123456,
+    "buyNumber": 1,
+    "buyer": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+    "pricePerToken": "0.00199800"
+  }
+}
+```
+
+## Progress Tracking
+
+The service provides real-time progress updates:
+
+```json
+{
+  "timestamp": "2024-01-01T12:05:00.000Z",
+  "level": "info",
+  "message": "TRACKING_PROGRESS",
+  "data": {
+    "target_token": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "buys_found": 25,
+    "target_buys": 100,
+    "progress_percentage": "25.0",
+    "runtime_minutes": "2.5",
+    "blocks_processed": 150,
+    "transactions_processed": 45000,
+    "is_complete": false
   }
 }
 ```
@@ -96,26 +139,26 @@ The service is built with a modular architecture:
 
 - **RPC Service** (`src/services/rpcService.js`): Handles Solana RPC connection and block polling
 - **Instruction Decoder** (`src/services/instructionDecoder.js`): Decodes transaction instructions and matches DEX programs
-- **Swap Detector** (`src/services/swapDetector.js`): Analyzes transactions to identify swaps using balance changes
-- **Main Service** (`src/services/swapService.js`): Orchestrates all components and provides statistics
+- **Token Buy Tracker** (`src/services/tokenBuyTracker.js`): Analyzes transactions to identify buy transactions for the target token
+- **Main Service** (`src/services/tokenTrackingService.js`): Orchestrates all components and provides progress tracking
 - **Logger** (`src/services/logger.js`): Structured logging system
 - **Configuration** (`src/config/index.js`): Centralized configuration management
 
 ## Performance
 
-The service is optimized for high-throughput processing:
+The service is optimized for efficient token tracking:
 
 - Efficient slot polling with configurable intervals
-- Parallel transaction processing within blocks
-- Memory management with automatic cleanup of old records
-- Performance metrics and monitoring
+- Targeted processing focusing only on transactions involving the target token
+- Automatic completion when 100 buys are found
+- Performance metrics and progress monitoring
 - Graceful error handling and retry logic
 
 ## Extending
 
-To add support for new DEXes:
+To add support for new DEXes or modify tracking behavior:
 
-1. Add the DEX configuration to `src/config/index.js`:
+1. **Add new DEX support** in `src/config/index.js`:
    ```javascript
    newDex: {
      programId: 'NEW_PROGRAM_ID_HERE',
@@ -126,7 +169,10 @@ To add support for new DEXes:
    }
    ```
 
-2. The service will automatically detect and process swaps from the new DEX.
+2. **Modify tracking parameters** in `src/services/tokenBuyTracker.js`:
+   - Change `maxBuys` to track more or fewer transactions
+   - Adjust buy detection logic for specific requirements
+   - Add additional metadata extraction
 
 ## Production Deployment
 
@@ -134,13 +180,13 @@ For production use:
 
 1. **Use Enhanced RPC Providers**: Configure with Helius, Triton, or other enhanced RPC providers for better reliability and performance.
 
-2. **Database Integration**: Extend the `SwapDetector` to store results in PostgreSQL, Redis, or your preferred database.
+2. **Database Integration**: Extend the `TokenBuyTracker` to store results in PostgreSQL, Redis, or your preferred database.
 
-3. **API Layer**: Add REST or WebSocket API endpoints to expose detected swaps to client applications.
+3. **API Layer**: Add REST or WebSocket API endpoints to expose tracking progress and results to client applications.
 
 4. **Monitoring**: Implement proper monitoring, alerting, and health checks.
 
-5. **Scaling**: Consider horizontal scaling for high-volume processing.
+5. **Multi-Token Support**: Extend to track multiple tokens simultaneously.
 
 ## License
 
