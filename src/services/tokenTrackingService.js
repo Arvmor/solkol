@@ -22,6 +22,7 @@ export class TokenTrackingService {
   }
 
   async start(targetToken) {
+  }
   async start(targetToken, startingBlock = null) {
     this.logger.info('Starting Token Buy Tracking Service', { targetToken, startingBlock });
     
