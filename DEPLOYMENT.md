@@ -1,55 +1,99 @@
-# GitHub Pages Deployment Guide
+# Token Buyer Address Tracker - Deployment Guide
 
-## ✅ Build Complete
+This application is a simple UI for tracking token buyer addresses across different tokens and block numbers, with duplicate address highlighting.
 
-Your React application has been successfully built as a static site in the `/docs` folder, ready for GitHub Pages deployment.
+## Features
 
-## 📁 Generated Files
+- **Search Interface**: Input token address and block number to search for buyer addresses
+- **Multiple Searches**: Keep track of multiple searches and their results
+- **Duplicate Detection**: Automatically highlights buyer addresses that appear across different tokens
+- **Responsive Design**: Clean, modern UI that works on desktop and mobile
+- **Static Deployment**: Built as a static site for easy deployment
 
-The build process created:
-- `/docs/index.html` - Main HTML file
-- `/docs/assets/` - CSS and JavaScript bundles
-- `/docs/.nojekyll` - Prevents Jekyll processing
+## How to Use
 
-## 🚀 Deploy to GitHub Pages
+1. **Enter Token Information**:
+   - Token Address: Enter the Solana token mint address
+   - Block Number: Enter the specific block number to search
 
-### 1. Push to GitHub
+2. **Search for Buyers**: Click "Search Buyers" to find all buyer addresses for that token at the specified block
+
+3. **View Results**: 
+   - Each search appears as a separate card with buyer details
+   - Duplicate addresses across different tokens are highlighted in yellow
+   - Click transaction links to view on Solscan
+
+4. **Track Duplicates**: The "Duplicate Addresses Summary" section shows addresses that appear in multiple searches
+
+5. **Manage Searches**: Use "Clear All Searches" to reset and start fresh
+
+## Development
+
+### Prerequisites
+- Node.js 18+
+- pnpm
+
+### Setup
 ```bash
-git add .
-git commit -m "Add static build for GitHub Pages"
-git push origin main
+# Install dependencies
+pnpm install
+
+# Start development server
+pnpm run dev
+
+# Build for production
+pnpm run build
 ```
 
-### 2. Configure GitHub Pages
-1. Go to your repository on GitHub
-2. Navigate to **Settings** > **Pages**
-3. Under **Source**, select **Deploy from a branch**
-4. Choose **main** branch and **/ (root)** folder
-5. Wait for the **Change source to /docs** option to appear, then select **main** branch and **/docs** folder
-6. Click **Save**
+## Deployment
 
-### 3. Access Your Site
-Your site will be available at: `https://[your-username].github.io/[repository-name]/`
+### GitHub Pages
+The project is configured for GitHub Pages deployment:
 
-## 🔧 Development Commands
-
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run preview` - Preview production build
-- `npm run backend:dev` - Start backend service (if needed)
-
-## 📝 Notes
-
-- The build is configured to output to `/docs` folder for GitHub Pages
-- The `.nojekyll` file prevents GitHub from processing the site with Jekyll
-- Static assets are automatically optimized and bundled by Vite
-- The site is a React SPA (Single Page Application)
-
-## 🔄 Rebuilding
-
-To rebuild the site after making changes:
 ```bash
-npm run build
+# Build with correct base path for GitHub Pages
+pnpm run build:github
+
+# The built files will be in the docs/ directory
+# Push to GitHub and enable Pages in repository settings
 ```
 
-Then commit and push the updated `/docs` folder to deploy the changes.
+### Other Static Hosting
+For other static hosting services (Netlify, Vercel, etc.):
+
+```bash
+# Build for production
+pnpm run build
+
+# Deploy the contents of the docs/ directory
+```
+
+### Manual Deployment
+1. Run `pnpm run build`
+2. Copy all files from `docs/` directory to your web server
+3. Serve `index.html` as the main entry point
+
+## Technical Details
+
+- **Framework**: React 18 with TypeScript
+- **Styling**: Tailwind CSS
+- **Build Tool**: Vite
+- **Package Manager**: pnpm
+- **Output**: Static files in `docs/` directory
+
+## API Integration
+
+Currently uses mock data for demonstration. To integrate with real Solana data:
+
+1. Replace the `fetchBuyersForToken` function in `src/App.tsx`
+2. Implement actual Solana RPC calls to fetch transaction data
+3. Parse transaction logs to extract buyer addresses
+4. Handle rate limiting and error cases
+
+## Browser Compatibility
+
+- Modern browsers with ES2020 support
+- Chrome 88+
+- Firefox 78+
+- Safari 14+
+- Edge 88+
