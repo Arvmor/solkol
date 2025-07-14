@@ -11,10 +11,14 @@
     "lint": "eslint src/"
   },
   "dependencies": {
-    "@solana/web3.js": "^1.87.6",
     "@solana/spl-token": "^0.4.1",
+    "@solana/web3.js": "^1.87.6",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
     "dotenv": "^16.3.1",
-    "node-fetch": "^3.3.2"
+    "node-fetch": "^3.3.2",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
   },
   "devDependencies": {
     "eslint": "^8.55.0"
