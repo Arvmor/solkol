@@ -29,7 +29,7 @@ export class ApiService {
   }
 
   // Start token tracking
-  async startTracking(tokenAddress, blockNumber = null) {
+  async startTracking(tokenAddress, blockNumber = null | Number) {
     return this.makeRequest('/track', {
       method: 'POST',
       body: JSON.stringify({

@@ -61,6 +61,16 @@ app.post('/api/track', async (req, res) => {
       logger.error('Error starting tracking service', { sessionId, error: error.message });
     });
 
+    // Update status to running immediately after service initialization
+    // The service.start() promise won't resolve until the service stops, so we need to update status here
+    setTimeout(() => {
+      const session = activeSessions.get(sessionId);
+      if (session && session.status === 'starting') {
+        session.status = 'running';
+        logger.info('Session status updated to running', { sessionId });
+      }
+    }, 1000); // Give the service 1 second to initialize
+
     res.json({ 
       sessionId,
       status: 'starting',
@@ -94,10 +104,22 @@ app.get('/api/track/:sessionId', (req, res) => {
     }
 
     if (status === 'starting') {
+      // Even if status is starting, check if the service has found any buys
+      const progress = service.buyTracker.getProgress();
+      const buys = service.buyTracker.getDetectedBuys();
+      
+      // If we have buys, update status to running
+      if (buys.length > 0) {
+        session.status = 'running';
+        logger.info('Session status updated to running due to found buys', { sessionId, buyCount: buys.length });
+      }
+      
       return res.json({
         sessionId,
-        status: 'starting',
-        progress: { current: 0, target: 100, percentage: '0.0', isComplete: false }
+        status: buys.length > 0 ? 'running' : 'starting',
+        progress,
+        buyers: buys,
+        isComplete: progress.isComplete
       });
     }
 
