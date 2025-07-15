@@ -10,4 +10,17 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['lucide-react'],
   },
+  resolve: {
+    alias: {
+      // Add proper handling for .js imports from TypeScript
+      '@': '/src',
+    },
+  },
+  define: {
+    // Ensure environment variables are available
+    global: 'globalThis',
+  },
+  server: {
+    port: 3000,
+  },
 });
