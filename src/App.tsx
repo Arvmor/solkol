@@ -230,6 +230,19 @@ function App() {
             }
           };
         } catch (error) {
+          // Handle 404 (session not found) as completion
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          if (errorMessage.includes('404') || errorMessage.includes('Session not found')) {
+            return {
+              searchId: search.id,
+              data: {
+                isLoading: false,
+                isComplete: true,
+                error: 'Session completed or stopped'
+              }
+            };
+          }
+          
           return {
             searchId: search.id,
             data: {
@@ -242,6 +255,8 @@ function App() {
       
       // Wait for all updates to complete
       Promise.all(updatePromises).then(updates => {
+        console.log('Progress updates received:', updates);
+        
         setSearches(prev => prev.map(search => {
           const update = updates.find(u => u.searchId === search.id);
           if (update) {
@@ -253,6 +268,7 @@ function App() {
             // If session is complete or has error, mark it as not loading
             if (update.data.isComplete || update.data.error) {
               updatedSearch.isLoading = false;
+              console.log(`Session ${search.id} marked as complete/error:`, update.data);
             }
             
             return updatedSearch;
@@ -262,6 +278,7 @@ function App() {
         
         // Check if any sessions are still active using the ref
         const stillActive = searchesRef.current.some(search => search.isLoading);
+        console.log('Still active sessions:', stillActive);
         if (!stillActive) {
           setServiceStatus('idle');
         }
@@ -319,7 +336,8 @@ function App() {
           : search
       ));
 
-      // Session monitoring is handled by global progress monitoring
+      // Restart global progress monitoring to ensure it's running
+      startGlobalProgressMonitoring();
 
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to start tracking');
@@ -507,12 +525,20 @@ function App() {
             )}
             
             {searches.length > 0 && (
-              <button
-                onClick={clearAllSearches}
-                className="px-6 py-2 bg-gray-600 text-white rounded-md font-medium hover:bg-gray-700 shadow-sm transition-colors"
-              >
-                🗑️ Clear All
-              </button>
+              <>
+                <button
+                  onClick={startGlobalProgressMonitoring}
+                  className="px-6 py-2 bg-green-600 text-white rounded-md font-medium hover:bg-green-700 shadow-sm transition-colors"
+                >
+                  🔄 Refresh Progress
+                </button>
+                <button
+                  onClick={clearAllSearches}
+                  className="px-6 py-2 bg-gray-600 text-white rounded-md font-medium hover:bg-gray-700 shadow-sm transition-colors"
+                >
+                  🗑️ Clear All
+                </button>
+              </>
             )}
           </div>
         </div>

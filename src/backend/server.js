@@ -127,14 +127,23 @@ app.get('/api/track/:sessionId', (req, res) => {
     const progress = service.buyTracker.getProgress();
     const buys = service.buyTracker.getDetectedBuys();
     const stats = service.getStats();
+    
+    // Check if tracking is complete
+    const isComplete = progress.isComplete || service.buyTracker.isTrackingComplete();
+    
+    // If complete, update session status
+    if (isComplete && status !== 'complete') {
+      session.status = 'complete';
+      logger.info('Session marked as complete', { sessionId, buyCount: buys.length });
+    }
 
     res.json({
       sessionId,
-      status: 'running',
+      status: isComplete ? 'complete' : 'running',
       progress,
       buyers: buys,
       stats,
-      isComplete: progress.isComplete
+      isComplete: isComplete
     });
 
   } catch (error) {
