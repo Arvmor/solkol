@@ -38,7 +38,13 @@ interface SearchData {
     percentage: string;
     isComplete: boolean;
   };
+  isFromCache?: boolean;
+  lastUpdated?: number;
 }
+
+// Storage keys
+const STORAGE_KEY = 'token_tracker_searches';
+const CACHE_EXPIRY_DAYS = 7; // Cache results for 7 days
 
 function App() {
   const [searches, setSearches] = useState<SearchData[]>([]);
@@ -61,6 +67,16 @@ function App() {
     searchesRef.current = searches;
   }, [searches]);
 
+  // Load saved searches from localStorage on component mount
+  useEffect(() => {
+    loadSavedSearches();
+  }, []);
+
+  // Save searches to localStorage whenever searches state changes
+  useEffect(() => {
+    saveSearchesToStorage();
+  }, [searches]);
+
   // Initialize API service and check backend connection
   useEffect(() => {
     if (!apiService.current) {
@@ -80,6 +96,275 @@ function App() {
       }
     };
   }, []);
+
+  // Save searches to localStorage
+  const saveSearchesToStorage = () => {
+    try {
+      const searchesToSave = searches.map(search => ({
+        ...search,
+        // Don't save sessionId for completed searches as they're not needed
+        sessionId: search.isLoading ? search.sessionId : '',
+        // Add cache metadata
+        lastUpdated: Date.now()
+      }));
+      
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(searchesToSave));
+    } catch (error) {
+      console.warn('Failed to save searches to localStorage:', error);
+    }
+  };
+
+  // Load saved searches from localStorage
+  const loadSavedSearches = () => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsedSearches = JSON.parse(saved);
+        
+        // Filter out expired cache entries
+        const now = Date.now();
+        const expiryMs = CACHE_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
+        
+        const validSearches = parsedSearches.filter((search: SearchData) => {
+          if (!search.lastUpdated) return false;
+          return (now - search.lastUpdated) < expiryMs;
+        });
+
+        // Mark all loaded searches as from cache and not loading
+        const processedSearches = validSearches.map((search: SearchData) => ({
+          ...search,
+          isFromCache: true,
+          isLoading: false,
+          sessionId: '', // Clear sessionId for cached searches
+          progress: search.progress ? { ...search.progress, isComplete: true } : undefined
+        }));
+
+        setSearches(processedSearches);
+        
+        // Clean up expired entries
+        if (validSearches.length !== parsedSearches.length) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(validSearches));
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to load searches from localStorage:', error);
+    }
+  };
+
+  // Check if a search already exists for the given token and block
+  const findExistingSearch = (tokenAddress: string, blockNumber: number): SearchData | null => {
+    return searches.find(search => 
+      search.tokenAddress.toLowerCase() === tokenAddress.toLowerCase() && 
+      search.blockNumber === blockNumber
+    ) || null;
+  };
+
+  // Clear expired cache entries
+  const clearExpiredCache = () => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsedSearches = JSON.parse(saved);
+        const now = Date.now();
+        const expiryMs = CACHE_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
+        
+        const validSearches = parsedSearches.filter((search: SearchData) => {
+          if (!search.lastUpdated) return false;
+          return (now - search.lastUpdated) < expiryMs;
+        });
+
+        if (validSearches.length !== parsedSearches.length) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(validSearches));
+          const clearedCount = parsedSearches.length - validSearches.length;
+          setError(`✅ Cleared ${clearedCount} expired cache entries`);
+          setTimeout(() => setError(null), 3000);
+          console.log(`Cleared ${clearedCount} expired cache entries`);
+        } else {
+          setError('ℹ️ No expired cache entries to clear');
+          setTimeout(() => setError(null), 3000);
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to clear expired cache:', error);
+      setError('❌ Failed to clear expired cache');
+      setTimeout(() => setError(null), 3000);
+    }
+  };
+
+  // Export cached data
+  const exportCachedData = () => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const data = JSON.parse(saved);
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `token-tracker-cache-${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        setError('✅ Cache data exported successfully');
+        setTimeout(() => setError(null), 3000);
+      } else {
+        setError('ℹ️ No cache data to export');
+        setTimeout(() => setError(null), 3000);
+      }
+    } catch (error) {
+      console.warn('Failed to export cache data:', error);
+      setError('❌ Failed to export cache data');
+      setTimeout(() => setError(null), 3000);
+    }
+  };
+
+  // Import cached data from JSON file
+  const importCachedData = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const content = e.target?.result as string;
+        const importedData = JSON.parse(content);
+        
+        // Validate the imported data structure
+        if (!Array.isArray(importedData)) {
+          setError('❌ Invalid cache file format: Expected an array of search data');
+          setTimeout(() => setError(null), 5000);
+          return;
+        }
+
+        // Validate each search entry
+        const validSearches = importedData.filter((search: any) => {
+          return search && 
+                 typeof search === 'object' &&
+                 search.tokenAddress &&
+                 typeof search.blockNumber === 'number' &&
+                 Array.isArray(search.buyers);
+        });
+
+        if (validSearches.length === 0) {
+          setError('❌ No valid search data found in the imported file');
+          setTimeout(() => setError(null), 5000);
+          return;
+        }
+
+        if (validSearches.length !== importedData.length) {
+          console.warn(`Imported ${importedData.length} searches, but only ${validSearches.length} were valid`);
+        }
+
+        // Process imported searches
+        const processedSearches = validSearches.map((search: any) => ({
+          ...search,
+          id: search.id || Date.now().toString() + Math.random().toString(36).substr(2, 9),
+          isFromCache: true,
+          isLoading: false,
+          sessionId: '', // Clear sessionId for imported searches
+          progress: search.progress ? { ...search.progress, isComplete: true } : undefined,
+          lastUpdated: search.lastUpdated || Date.now()
+        }));
+
+        // Merge with existing searches, avoiding duplicates
+        setSearches(prev => {
+          const existingIds = new Set(prev.map(s => s.id));
+          const newSearches = processedSearches.filter(s => !existingIds.has(s.id));
+          
+          if (newSearches.length === 0) {
+            setError('ℹ️ All imported searches already exist in cache');
+            setTimeout(() => setError(null), 3000);
+            return prev;
+          }
+
+          const merged = [...newSearches, ...prev];
+          setError(`✅ Successfully imported ${newSearches.length} searches from cache file`);
+          setTimeout(() => setError(null), 3000);
+          return merged;
+        });
+
+      } catch (error) {
+        console.warn('Failed to import cache data:', error);
+        setError('❌ Failed to parse cache file. Please ensure it\'s a valid JSON file.');
+        setTimeout(() => setError(null), 5000);
+      }
+    };
+
+    reader.onerror = () => {
+      setError('❌ Failed to read the selected file');
+      setTimeout(() => setError(null), 3000);
+    };
+
+    reader.readAsText(file);
+    
+    // Reset the file input
+    event.target.value = '';
+  };
+
+  // Refresh a cached search by removing it and starting a new search
+  const refreshCachedSearch = async (search: SearchData) => {
+    if (!apiService.current || backendStatus !== 'connected') {
+      setError('Cannot refresh: Backend not connected');
+      return;
+    }
+
+    // Remove the cached search
+    setSearches(prev => prev.filter(s => s.id !== search.id));
+    
+    // Set inputs to the search values
+    setTokenInput(search.tokenAddress);
+    setBlockInput(search.blockNumber.toString());
+    
+    // Start a new search
+    setError(null);
+    setIsLoading(true);
+    setServiceStatus('running');
+
+    const searchId = Date.now().toString();
+
+    const newSearch: SearchData = {
+      id: searchId,
+      sessionId: '',
+      tokenAddress: search.tokenAddress,
+      blockNumber: search.blockNumber,
+      buyers: [],
+      timestamp: Date.now(),
+      isLoading: true,
+      progress: { current: 0, target: 100, percentage: '0.0', isComplete: false }
+    };
+
+    setSearches(prev => [newSearch, ...prev]);
+
+    try {
+      // Start the token tracking via API
+      const response = await apiService.current.startTracking(
+        search.tokenAddress,
+        search.blockNumber
+      );
+
+      // Update search with session ID
+      setSearches(prev => prev.map(s => 
+        s.id === searchId 
+          ? { ...s, sessionId: response.sessionId }
+          : s
+      ));
+
+      // Restart global progress monitoring to ensure it's running
+      startGlobalProgressMonitoring();
+
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to start tracking');
+      setSearches(prev => prev.map(s => 
+        s.id === searchId 
+          ? { ...s, isLoading: false, error: 'Failed to start tracking' }
+          : s
+      ));
+      setIsLoading(false);
+      setServiceStatus('error');
+    }
+  };
 
   const checkBackendHealth = async () => {
     try {
@@ -303,6 +588,21 @@ function App() {
       return;
     }
 
+    const tokenAddress = tokenInput.trim();
+    const blockNumber = parseInt(blockInput);
+
+    // Check if we already have results for this token and block
+    const existingSearch = findExistingSearch(tokenAddress, blockNumber);
+    
+    if (existingSearch) {
+      // If we have cached results, show them and expand the search
+      setExpandedSearches(prev => new Set([...prev, existingSearch.id]));
+      setError('✅ Results loaded from cache! This search was previously completed.');
+      // Clear the error after 3 seconds
+      setTimeout(() => setError(null), 3000);
+      return;
+    }
+
     setError(null);
     setIsLoading(true);
     setServiceStatus('running');
@@ -312,8 +612,8 @@ function App() {
     const newSearch: SearchData = {
       id: searchId,
       sessionId: '',
-      tokenAddress: tokenInput.trim(),
-      blockNumber: parseInt(blockInput),
+      tokenAddress: tokenAddress,
+      blockNumber: blockNumber,
       buyers: [],
       timestamp: Date.now(),
       isLoading: true,
@@ -325,8 +625,8 @@ function App() {
     try {
       // Start the token tracking via API
       const response = await apiService.current.startTracking(
-        tokenInput.trim(),
-        parseInt(blockInput)
+        tokenAddress,
+        blockNumber
       );
 
       // Update search with session ID
@@ -397,6 +697,13 @@ function App() {
       clearInterval(globalProgressInterval.current);
     }
     
+    // Clear localStorage
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch (error) {
+      console.warn('Failed to clear localStorage:', error);
+    }
+    
     setSearches([]);
     setExpandedSearches(new Set());
     setServiceStatus('idle');
@@ -459,6 +766,33 @@ function App() {
                 <div className="mt-2 text-sm text-red-700">
                   <p>Please start the backend server by running:</p>
                   <code className="bg-red-100 px-2 py-1 rounded mt-1 inline-block">npm run api:dev</code>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Cache Information */}
+        {searches.length > 0 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-blue-800">
+                  Smart Caching Enabled
+                </h3>
+                <div className="mt-2 text-sm text-blue-700">
+                  <p>Search results are automatically saved and retrieved from your browser's cache. 
+                  If you search for the same token and block number again, results will be loaded instantly. 
+                  Cache expires after {CACHE_EXPIRY_DAYS} days.</p>
+                  <p className="mt-1 text-xs text-blue-600">
+                    💡 <strong>Import Tip:</strong> You can import cache files using the "Import Cache" button. 
+                    There's a sample cache file available in the <code className="bg-blue-100 px-1 rounded">exports/</code> folder.
+                  </p>
                 </div>
               </div>
             </div>
@@ -533,6 +867,27 @@ function App() {
                   🔄 Refresh Progress
                 </button>
                 <button
+                  onClick={clearExpiredCache}
+                  className="px-6 py-2 bg-orange-600 text-white rounded-md font-medium hover:bg-orange-700 shadow-sm transition-colors"
+                >
+                  🧹 Clear Expired Cache
+                </button>
+                <button
+                  onClick={exportCachedData}
+                  className="px-6 py-2 bg-indigo-600 text-white rounded-md font-medium hover:bg-indigo-700 shadow-sm transition-colors"
+                >
+                  📤 Export Cache
+                </button>
+                <label className="px-6 py-2 bg-purple-600 text-white rounded-md font-medium hover:bg-purple-700 shadow-sm transition-colors cursor-pointer">
+                  📥 Import Cache
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={importCachedData}
+                    className="hidden"
+                  />
+                </label>
+                <button
                   onClick={clearAllSearches}
                   className="px-6 py-2 bg-gray-600 text-white rounded-md font-medium hover:bg-gray-700 shadow-sm transition-colors"
                 >
@@ -545,7 +900,7 @@ function App() {
 
         {/* Overall Statistics */}
         {searches.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
               <div className="flex items-center">
                 <div className="p-2 bg-blue-100 rounded-lg">
@@ -615,6 +970,20 @@ function App() {
                 </div>
               </div>
             </div>
+            
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+              <div className="flex items-center">
+                <div className="p-2 bg-green-100 rounded-lg">
+                  <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm font-medium text-gray-500">Cached Results</p>
+                  <p className="text-2xl font-bold text-gray-900">{searches.filter(s => s.isFromCache).length}</p>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -652,7 +1021,7 @@ function App() {
         )}
 
         {/* Search Results */}
-        {sortedSearches.length > 0 && (
+        {sortedSearches.length > 0 ? (
           <div className="space-y-6">
             {/* Sort Controls */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
@@ -701,12 +1070,24 @@ function App() {
                               <span className="text-sm text-blue-600 font-medium">Live Tracking</span>
                             </div>
                           )}
+                          {search.isFromCache && !search.isLoading && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-green-600 bg-green-50 px-2 py-1 rounded border border-green-200">
+                                💾 From Cache
+                              </span>
+                            </div>
+                          )}
                           {search.error && (
                             <span className="text-sm text-red-600 bg-red-50 px-2 py-1 rounded">Error: {search.error}</span>
                           )}
                         </div>
                         <p className="text-sm text-gray-600">
                           Block: {search.blockNumber.toLocaleString()} • Started: {new Date(search.timestamp).toLocaleString()}
+                          {search.isFromCache && search.lastUpdated && (
+                            <span className="ml-2 text-green-600">
+                              • Cached: {new Date(search.lastUpdated).toLocaleString()}
+                            </span>
+                          )}
                         </p>
                       </div>
                       
@@ -726,14 +1107,29 @@ function App() {
                           )}
                         </div>
                         
-                        <button
-                          onClick={() => toggleSearchExpansion(search.id)}
-                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                        >
-                          <svg className={`w-5 h-5 text-gray-500 transform transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
-                        </button>
+                        {/* Action Buttons */}
+                        <div className="flex items-center gap-2">
+                          {search.isFromCache && !search.isLoading && (
+                            <button
+                              onClick={() => refreshCachedSearch(search)}
+                              className="p-2 hover:bg-blue-100 rounded-lg transition-colors"
+                              title="Refresh this search with new data"
+                            >
+                              <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                            </button>
+                          )}
+                          
+                          <button
+                            onClick={() => toggleSearchExpansion(search.id)}
+                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                          >
+                            <svg className={`w-5 h-5 text-gray-500 transform transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                        </div>
                       </div>
                     </div>
 
@@ -870,6 +1266,30 @@ function App() {
                 </div>
               );
             })}
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
+            <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No Search Results Yet</h3>
+            <p className="text-gray-600 mb-4">
+              Start by entering a token address and block number above, or import existing cache data.
+            </p>
+            <div className="flex justify-center gap-4">
+              <label className="inline-flex items-center px-4 py-2 bg-purple-600 text-white rounded-md font-medium hover:bg-purple-700 shadow-sm transition-colors cursor-pointer">
+                📥 Import Cache File
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={importCachedData}
+                  className="hidden"
+                />
+              </label>
+              <p className="text-sm text-gray-500 flex items-center">
+                💡 Sample file: <code className="bg-gray-100 px-1 rounded ml-1">exports/token-tracker-cache-2025-07-15.json</code>
+              </p>
+            </div>
           </div>
         )}
       </div>
