@@ -91,7 +91,7 @@ Solana Token Buy Tracker
 Usage: npm start
 
 The service will prompt you to enter a token mint address and then track
-the first 100 buy transactions for that token across all supported DEXes.
+the first 1000 buy transactions for that token across all supported DEXes.
 
 Environment Variables:
   SOLANA_RPC_URL          Solana RPC endpoint (default: public mainnet)

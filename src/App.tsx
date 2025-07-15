@@ -332,7 +332,7 @@ function App() {
       buyers: [],
       timestamp: Date.now(),
       isLoading: true,
-      progress: { current: 0, target: 100, percentage: '0.0', isComplete: false }
+      progress: { current: 0, target: 1000, percentage: '0.0', isComplete: false }
     };
 
     setSearches(prev => [newSearch, ...prev]);
@@ -617,7 +617,7 @@ function App() {
       buyers: [],
       timestamp: Date.now(),
       isLoading: true,
-      progress: { current: 0, target: 100, percentage: '0.0', isComplete: false }
+      progress: { current: 0, target: 1000, percentage: '0.0', isComplete: false }
     };
 
     setSearches(prev => [newSearch, ...prev]);

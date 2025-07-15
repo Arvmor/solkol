@@ -9,7 +9,7 @@ export class TokenBuyTracker {
     this.targetToken = null;
     this.startingBlock = null;
     this.detectedBuys = []; // Still using this name for backward compatibility
-    this.maxBuys = 100; // Still using this name for backward compatibility
+    this.maxBuys = 1000; // Still using this name for backward compatibility
     this.isComplete = false;
   }
 

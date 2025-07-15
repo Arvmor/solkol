@@ -1,6 +1,6 @@
 # Solana Token Transaction Tracker
 
-A backend service that tracks the first 100 transactions involving a specific token on the Solana blockchain in near real-time.
+A backend service that tracks the first 1000 transactions involving a specific token on the Solana blockchain in near real-time.
 
 ## Features
 
@@ -8,7 +8,7 @@ A backend service that tracks the first 100 transactions involving a specific to
 - **Real-time Transaction Streaming**: Connects to Solana RPC and polls for new blocks
 - **Simplified Detection**: Counts any transaction that includes the target token as a buyer address
 - **No Complex Decoding**: Removes the hassle of decoding swaps, transfers, or other transaction types
-- **Progress Tracking**: Shows real-time progress toward finding 100 transactions
+- **Progress Tracking**: Shows real-time progress toward finding 1000 transactions
 - **Structured Logging**: Outputs detected transactions in structured JSON format
 - **Buyer Identification**: Attempts to identify the wallet address involved in each transaction
 - **Universal Coverage**: Captures all transaction types (swaps, transfers, mints, burns, etc.)
@@ -135,7 +135,7 @@ The service provides real-time progress updates:
   "data": {
     "target_token": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
     "buys_found": 25,
-    "target_buys": 100,
+    "target_buys": 1000,
     "progress_percentage": "25.0",
     "runtime_minutes": "2.5",
     "blocks_processed": 150,
@@ -165,7 +165,7 @@ The service is optimized for efficient token tracking with built-in rate limitin
 - **Exponential Backoff**: Automatic backoff when rate limits are hit
 - **Efficient Slot Polling**: Configurable intervals (default: 2 seconds) to reduce API load
 - **Targeted Processing**: Focuses only on transactions involving the target token
-- **Automatic Completion**: Stops when 100 buys are found
+- **Automatic Completion**: Stops when 1000 buys are found
 - **Performance Metrics**: Real-time monitoring and progress tracking
 - **Graceful Error Handling**: Intelligent retry logic with exponential backoff
 
