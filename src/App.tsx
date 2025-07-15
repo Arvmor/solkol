@@ -1,5 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { TokenTrackingService } from './services/tokenTrackingService.js';
+import React, { useState } from 'react';
 
 interface BuyerAddress {
   address: string;
@@ -7,7 +6,6 @@ interface BuyerAddress {
   solAmount: number;
   signature: string;
   timestamp: number;
-  // Additional fields from the real service
   dex?: string;
   targetToken?: string;
   tokenSold?: string;
@@ -47,27 +45,6 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [serviceStatus, setServiceStatus] = useState<'idle' | 'running' | 'error'>('idle');
-  
-  const tokenTrackingService = useRef<TokenTrackingService | null>(null);
-  const currentSearchId = useRef<string | null>(null);
-  const progressInterval = useRef<NodeJS.Timeout | null>(null);
-
-  // Initialize service
-  useEffect(() => {
-    if (!tokenTrackingService.current) {
-      tokenTrackingService.current = new TokenTrackingService();
-    }
-    
-    // Cleanup on unmount
-    return () => {
-      if (tokenTrackingService.current) {
-        tokenTrackingService.current.stop();
-      }
-      if (progressInterval.current) {
-        clearInterval(progressInterval.current);
-      }
-    };
-  }, []);
 
   // Get all unique addresses and their occurrences across searches
   const getAllAddresses = () => {
@@ -94,74 +71,9 @@ function App() {
 
   const addressCounts = getAllAddresses();
 
-  // Convert service buy data to UI format
-  const convertServiceBuyToUI = (buy: any): BuyerAddress => {
-    return {
-      address: buy.buyer || 'unknown',
-      tokenAmount: parseFloat(buy.amountBought || '0'),
-      solAmount: parseFloat(buy.amountSold || '0'),
-      signature: buy.txHash || '',
-      timestamp: buy.timestamp * 1000, // Convert to milliseconds
-      dex: buy.dex,
-      targetToken: buy.targetToken,
-      tokenSold: buy.tokenSold,
-      amountBought: buy.amountBought,
-      amountSold: buy.amountSold,
-      decimalsTarget: buy.decimalsTarget,
-      decimalsSold: buy.decimalsSold,
-      instructionType: buy.instructionType,
-      programId: buy.programId,
-      slot: buy.slot,
-      buyNumber: buy.buyNumber,
-      buyer: buy.buyer,
-      pricePerToken: buy.pricePerToken,
-      confidence: buy.confidence,
-    };
-  };
-
-  // Start progress monitoring
-  const startProgressMonitoring = (searchId: string) => {
-    if (progressInterval.current) {
-      clearInterval(progressInterval.current);
-    }
-    
-    progressInterval.current = setInterval(() => {
-      if (!tokenTrackingService.current) return;
-      
-      const stats = tokenTrackingService.current.getStats();
-      const buys = tokenTrackingService.current.buyTracker.getDetectedBuys();
-      const progress = tokenTrackingService.current.buyTracker.getProgress();
-      
-      setSearches(prev => prev.map(search => {
-        if (search.id === searchId) {
-          const convertedBuys = buys.map(convertServiceBuyToUI);
-          return {
-            ...search,
-            buyers: convertedBuys,
-            progress: progress,
-            isLoading: !progress.isComplete
-          };
-        }
-        return search;
-      }));
-      
-      // Stop monitoring if complete
-      if (progress.isComplete) {
-        clearInterval(progressInterval.current!);
-        setIsLoading(false);
-        setServiceStatus('idle');
-      }
-    }, 2000); // Update every 2 seconds
-  };
-
   const handleSearch = async () => {
     if (!tokenInput.trim() || !blockInput.trim()) {
       setError('Please enter both token address and block number');
-      return;
-    }
-
-    if (!tokenTrackingService.current) {
-      setError('Token tracking service not initialized');
       return;
     }
 
@@ -170,7 +82,6 @@ function App() {
     setServiceStatus('running');
 
     const searchId = Date.now().toString();
-    currentSearchId.current = searchId;
 
     const newSearch: SearchData = {
       id: searchId,
@@ -184,57 +95,57 @@ function App() {
 
     setSearches(prev => [newSearch, ...prev]);
 
-    try {
-      // Start the token tracking service
-      const success = await tokenTrackingService.current.start(
-        tokenInput.trim(),
-        parseInt(blockInput)
-      );
-
-      if (success) {
-        startProgressMonitoring(searchId);
-      } else {
-        throw new Error('Failed to start token tracking service');
-      }
-    } catch (error) {
-      console.error('Error starting token tracking:', error);
-      setError(error instanceof Error ? error.message : 'Failed to start token tracking');
+    // Simulate tracking for demo purposes
+    setTimeout(() => {
+      setSearches(prev => prev.map(search => {
+        if (search.id === searchId) {
+          return {
+            ...search,
+            isLoading: false,
+            progress: { current: 100, target: 100, percentage: '100.0', isComplete: true },
+            buyers: [
+              {
+                address: 'DemoBuyer123456789012345678901234567890',
+                tokenAmount: 1000,
+                solAmount: 0.5,
+                signature: 'DemoSignature123456789012345678901234567890',
+                timestamp: Date.now(),
+                dex: 'Jupiter',
+                buyer: 'DemoBuyer123456789012345678901234567890',
+                amountBought: '1000',
+                amountSold: '0.5',
+                decimalsTarget: 9,
+                decimalsSold: 9,
+                pricePerToken: '0.0005',
+                confidence: 'high'
+              }
+            ]
+          };
+        }
+        return search;
+      }));
       setIsLoading(false);
-      setServiceStatus('error');
-      
-      // Update the search with error state
-      setSearches(prev => prev.map(search => 
-        search.id === searchId 
-          ? { ...search, isLoading: false, error: 'Failed to start tracking' }
-          : search
-      ));
-    }
+      setServiceStatus('idle');
+    }, 2000);
   };
 
   const stopTracking = () => {
-    if (tokenTrackingService.current) {
-      tokenTrackingService.current.stop();
-    }
-    if (progressInterval.current) {
-      clearInterval(progressInterval.current);
-    }
     setIsLoading(false);
     setServiceStatus('idle');
   };
 
   const formatAddress = (address: string) => {
-    if (!address || address === 'unknown') return 'Unknown';
+    if (!address) return 'Unknown';
     return `${address.slice(0, 8)}...${address.slice(-8)}`;
   };
 
   const formatAmount = (amount: string | number, decimals: number = 9) => {
-    if (!amount) return '0';
     const num = typeof amount === 'string' ? parseFloat(amount) : amount;
-    const adjusted = num / Math.pow(10, decimals);
-    return adjusted.toLocaleString(undefined, { maximumFractionDigits: 6 });
+    return (num / Math.pow(10, decimals)).toFixed(4);
   };
 
   const isAddressDuplicate = (address: string) => {
+    const addressCounts = getAllAddresses();
     const info = addressCounts.get(address);
     return info ? info.count > 1 : false;
   };
@@ -486,16 +397,6 @@ function App() {
             </div>
           ))}
         </div>
-
-        {/* Help Text */}
-        {searches.length === 0 && (
-          <div className="text-center py-12 text-gray-500">
-            <p className="text-lg mb-4">Ready to track token buyers</p>
-            <p className="text-sm">
-              Enter a token address and starting block number above to begin tracking buyer addresses in real-time.
-            </p>
-          </div>
-        )}
       </div>
     </div>
   );
