@@ -1,26 +1,29 @@
-# Solana Token Buy Tracker
+# Solana Token Transaction Tracker
 
-A backend service that tracks the first 100 buy transactions for a specific token on the Solana blockchain in near real-time.
+A backend service that tracks the first 100 transactions involving a specific token on the Solana blockchain in near real-time.
 
 ## Features
 
-- **Token-Specific Tracking**: Focuses on buy transactions for a user-specified token
+- **Token-Specific Tracking**: Focuses on any transactions involving a user-specified token
 - **Real-time Transaction Streaming**: Connects to Solana RPC and polls for new blocks
-- **Multi-DEX Support**: Detects buys from Jupiter, Orca, Raydium, Lifinity, and Serum
-- **Instruction Decoding**: Decodes both top-level and inner instructions using Anchor discriminators
-- **Buy Analysis**: Analyzes pre/post token balances to identify buy transactions and amounts
-- **Progress Tracking**: Shows real-time progress toward finding 100 buys
-- **Structured Logging**: Outputs detected buys in structured JSON format
-- **Buyer Identification**: Attempts to identify the wallet address that made each purchase
-- **Price Calculation**: Calculates price per token for each buy transaction
+- **Simplified Detection**: Counts any transaction that includes the target token as a buyer address
+- **No Complex Decoding**: Removes the hassle of decoding swaps, transfers, or other transaction types
+- **Progress Tracking**: Shows real-time progress toward finding 100 transactions
+- **Structured Logging**: Outputs detected transactions in structured JSON format
+- **Buyer Identification**: Attempts to identify the wallet address involved in each transaction
+- **Universal Coverage**: Captures all transaction types (swaps, transfers, mints, burns, etc.)
 
-## Supported DEXes
+## Transaction Types Covered
 
-- **Jupiter Aggregator** (`JUP4Fb2cqiRUcaTHdrPC8h2gNsA2ETXiPDD33WcGuJB`)
-- **Orca** (`9W959DqEETiGZocYWCQPaJ6sBmUzgfxXfqGeTEdp3aQP`)
-- **Raydium** (`675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8`)
-- **Lifinity** (`2wT8Yq49kHgDzXuPxZSaeLaH1qbmGXtEyPy64bL7aD3c`)
-- **Serum** (`9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin`)
+The service now tracks **any transaction** that involves the target token, including but not limited to:
+
+- **Swaps** (Jupiter, Orca, Raydium, Lifinity, Serum, etc.)
+- **Transfers** (between wallets)
+- **Mints** (token creation)
+- **Burns** (token destruction)
+- **Staking/Unstaking**
+- **Liquidity operations**
+- **Any other transaction type** that affects the target token's balance
 
 ## Quick Start
 

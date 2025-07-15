@@ -717,10 +717,10 @@ function App() {
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            🚀 Token Buyer Address Tracker
+            🚀 Token Transaction Tracker
           </h1>
           <p className="text-gray-600 text-lg">
-            Track real token buyer addresses by token and block number. Addresses that appear across different tokens are highlighted as duplicates.
+            Track any transaction involving a token by token address and block number. Any transaction with the target token is counted as a buyer address.
           </p>
           <div className="mt-6 flex justify-center gap-4">
             <span className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-medium ${
@@ -923,7 +923,7 @@ function App() {
                   </svg>
                 </div>
                 <div className="ml-3">
-                  <p className="text-sm font-medium text-gray-500">Total Buys</p>
+                  <p className="text-sm font-medium text-gray-500">Total Transactions</p>
                   <p className="text-2xl font-bold text-gray-900">{searches.reduce((sum, search) => sum + search.buyers.length, 0)}</p>
                 </div>
               </div>
@@ -1095,7 +1095,7 @@ function App() {
                         {/* Statistics Cards */}
                         <div className="flex gap-2">
                           <div className="bg-blue-50 px-3 py-1 rounded-lg">
-                            <span className="text-xs text-blue-600 font-medium">{search.buyers.length} buys</span>
+                            <span className="text-xs text-blue-600 font-medium">{search.buyers.length} transactions</span>
                           </div>
                           <div className="bg-green-50 px-3 py-1 rounded-lg">
                             <span className="text-xs text-green-600 font-medium">{stats.uniqueBuyers} unique</span>
@@ -1175,17 +1175,17 @@ function App() {
                         </div>
                       </div>
 
-                      {/* Buys Table */}
+                      {/* Transactions Table */}
                       {search.buyers.length > 0 ? (
                         <div className="overflow-x-auto">
                           <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
                               <tr>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Buy #</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Buyer Address</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transaction #</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Address</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Token Amount</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount Sold</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DEX</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Signature</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
@@ -1254,7 +1254,7 @@ function App() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                           </svg>
                           <p className="text-lg font-medium">
-                            {search.isLoading ? 'Searching for buyers...' : 'No buyers found for this token and block range.'}
+                            {search.isLoading ? 'Searching for transactions...' : 'No transactions found for this token and block range.'}
                           </p>
                           {search.isLoading && (
                             <p className="text-sm text-gray-400 mt-2">This may take a few moments...</p>

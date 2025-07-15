@@ -111,7 +111,7 @@ export class TokenTrackingService {
           slot,
           totalTransactions: block.transactions.length,
           transactionsWithTargetToken,
-          buysFound: buyCount,
+          transactionsFound: buyCount,
           progress: this.buyTracker.getProgress()
         });
       }
@@ -121,14 +121,14 @@ export class TokenTrackingService {
         this.logger.logPerformance('PROCESS_BLOCK', blockDuration, {
           slot,
           transactionCount: block.transactions.length,
-          buyCount,
+          transactionCount: buyCount,
           progress: this.buyTracker.getProgress()
         });
       }
 
       if (buyCount > 0) {
         const progress = this.buyTracker.getProgress();
-        this.logger.info(`Block ${slot}: Found ${buyCount} buys. Progress: ${progress.current}/${progress.target} (${progress.percentage}%)`);
+        this.logger.info(`Block ${slot}: Found ${buyCount} transactions with target token. Progress: ${progress.current}/${progress.target} (${progress.percentage}%)`);
       }
 
     } catch (error) {
@@ -149,8 +149,8 @@ export class TokenTrackingService {
       
       this.logger.info('TRACKING_PROGRESS', {
         target_token: this.buyTracker.targetToken,
-        buys_found: progress.current,
-        target_buys: progress.target,
+        transactions_found: progress.current,
+        target_transactions: progress.target,
         progress_percentage: progress.percentage,
         runtime_minutes: runtimeMinutes.toFixed(2),
         blocks_processed: this.stats.totalBlocks,
@@ -170,22 +170,22 @@ export class TokenTrackingService {
     
     this.logger.info('TRACKING_COMPLETED', {
       target_token: this.buyTracker.targetToken,
-      total_buys_found: buys.length,
-      first_buy: buys[0] || null,
-      last_buy: buys[buys.length - 1] || null,
+      total_transactions_found: buys.length,
+      first_transaction: buys[0] || null,
+      last_transaction: buys[buys.length - 1] || null,
       unique_dexes: [...new Set(buys.map(buy => buy.dex))],
       unique_buyers: [...new Set(buys.map(buy => buy.buyer))].length,
       time_range: {
-        first_buy_timestamp: buys[0]?.timestamp,
-        last_buy_timestamp: buys[buys.length - 1]?.timestamp
+        first_transaction_timestamp: buys[0]?.timestamp,
+        last_transaction_timestamp: buys[buys.length - 1]?.timestamp
       }
     });
 
-    // Log all buys in a summary format
-    this.logger.info('ALL_BUYS_SUMMARY', {
+    // Log all transactions in a summary format
+    this.logger.info('ALL_TRANSACTIONS_SUMMARY', {
       target_token: this.buyTracker.targetToken,
-      buys: buys.map(buy => ({
-        buy_number: buy.buyNumber,
+      transactions: buys.map(buy => ({
+        transaction_number: buy.buyNumber,
         tx_hash: buy.txHash,
         dex: buy.dex,
         amount_bought: buy.amountBought,
@@ -208,7 +208,7 @@ export class TokenTrackingService {
       ...this.stats,
       runtime_ms: Date.now() - this.stats.startTime,
       progress: this.buyTracker.getProgress(),
-      recent_buys: this.buyTracker.getDetectedBuys().slice(-5), // Last 5 buys
+      recent_transactions: this.buyTracker.getDetectedBuys().slice(-5), // Last 5 transactions
     };
   }
 

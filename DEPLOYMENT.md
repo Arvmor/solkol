@@ -1,25 +1,28 @@
-# Token Buyer Address Tracker - Deployment Guide
+# Token Transaction Tracker - Deployment Guide
 
-This application is a simple UI for tracking token buyer addresses across different tokens and block numbers, with duplicate address highlighting.
+This application is a simple UI for tracking any transactions involving a specific token across different block numbers, with duplicate address highlighting.
 
 ## Features
 
-- **Search Interface**: Input token address and block number to search for buyer addresses
+- **Search Interface**: Input token address and block number to search for transactions
 - **Multiple Searches**: Keep track of multiple searches and their results
-- **Duplicate Detection**: Automatically highlights buyer addresses that appear across different tokens
+- **Duplicate Detection**: Automatically highlights addresses that appear across different tokens
+- **Universal Coverage**: Tracks any transaction type involving the target token (swaps, transfers, mints, burns, etc.)
 - **Responsive Design**: Clean, modern UI that works on desktop and mobile
 - **Static Deployment**: Built as a static site for easy deployment
 
 ## How to Use
 
 1. **Enter Token Information**:
+
    - Token Address: Enter the Solana token mint address
    - Block Number: Enter the specific block number to search
 
-2. **Search for Buyers**: Click "Search Buyers" to find all buyer addresses for that token at the specified block
+2. **Search for Transactions**: Click "Start Tracking" to find all transactions involving that token at the specified block
 
-3. **View Results**: 
-   - Each search appears as a separate card with buyer details
+3. **View Results**:
+
+   - Each search appears as a separate card with transaction details
    - Duplicate addresses across different tokens are highlighted in yellow
    - Click transaction links to view on Solscan
 
@@ -30,10 +33,12 @@ This application is a simple UI for tracking token buyer addresses across differ
 ## Development
 
 ### Prerequisites
+
 - Node.js 18+
 - pnpm
 
 ### Setup
+
 ```bash
 # Install dependencies
 pnpm install
@@ -48,6 +53,7 @@ pnpm run build
 ## Deployment
 
 ### GitHub Pages
+
 The project is configured for GitHub Pages deployment:
 
 ```bash
@@ -59,6 +65,7 @@ pnpm run build:github
 ```
 
 ### Other Static Hosting
+
 For other static hosting services (Netlify, Vercel, etc.):
 
 ```bash
@@ -69,6 +76,7 @@ pnpm run build
 ```
 
 ### Manual Deployment
+
 1. Run `pnpm run build`
 2. Copy all files from `docs/` directory to your web server
 3. Serve `index.html` as the main entry point

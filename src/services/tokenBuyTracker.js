@@ -8,8 +8,8 @@ export class TokenBuyTracker {
     this.logger = new Logger(config.logging.level);
     this.targetToken = null;
     this.startingBlock = null;
-    this.detectedBuys = [];
-    this.maxBuys = 100;
+    this.detectedBuys = []; // Still using this name for backward compatibility
+    this.maxBuys = 100; // Still using this name for backward compatibility
     this.isComplete = false;
   }
 
@@ -21,7 +21,7 @@ export class TokenBuyTracker {
     this.logger.info('Target token set', { 
       tokenMint, 
       startingBlock, 
-      maxBuys: this.maxBuys 
+      maxTransactions: this.maxBuys 
     });
   }
 
@@ -49,74 +49,70 @@ export class TokenBuyTracker {
         change.mint === this.targetToken
       );
 
-      // Check if this transaction involves our target token
+      // If no target token involvement, return empty
       if (targetTokenChanges.length === 0) {
         return [];
       }
 
-      if (targetTokenChanges.length === 0) {
-        return [];
-      }
+      // Simplified approach: Any transaction with target token is considered a buyer address
+      // Extract buyer from transaction
+      const buyer = this.extractBuyer(transaction);
+      
+      // Calculate block time from transaction
+      const blockTime = transaction.blockTime || Math.floor(Date.now() / 1000);
 
-      // Decode instructions
-      const decodedInstructions = this.instructionDecoder.decodeTransaction(transaction);
-      
-      // More permissive: check for any DEX-related instructions, not just strict swap instructions
-      const dexInstructions = decodedInstructions.filter(inst => inst.dex);
-      
-      // Debug logging for DEX instructions
-      if (dexInstructions.length > 0) {
-        this.logger.debug('Found DEX instructions in transaction', {
-          signature: signature.substring(0, 8) + '...',
-          dexInstructions: dexInstructions.map(inst => ({
-            dex: inst.dex,
-            type: inst.decodedData?.type || 'unknown',
-            programId: inst.programId
-          }))
+      // Create a simplified buy record for any transaction involving the target token
+      const buyData = {
+        txHash: signature,
+        dex: 'Any Transaction', // Indicates this is any transaction type, not just DEX
+        targetToken: this.targetToken,
+        tokenSold: 'unknown', // We don't analyze what was sold
+        amountBought: '0', // We don't analyze specific amounts
+        amountSold: '0', // We don't analyze specific amounts
+        decimalsTarget: 0, // Default value
+        decimalsSold: 0, // Default value
+        timestamp: blockTime,
+        instructionType: 'any_transaction', // Indicates this is any transaction type
+        programId: 'unknown',
+        slot: transaction.slot,
+        buyNumber: this.detectedBuys.length + 1,
+        buyer: buyer,
+        pricePerToken: '0', // We don't calculate price
+        confidence: 'low', // Indicates this is any transaction, not a confirmed buy
+      };
+
+      // Store the transaction (only if we haven't reached the limit)
+      if (!skipAddingBuys) {
+        this.detectedBuys.push(buyData);
+        
+        // Log the detected transaction
+        this.logger.info('TRANSACTION_WITH_TARGET_TOKEN_DETECTED', buyData);
+        
+        // Check if we've reached our target, but don't stop scanning historical blocks
+        if (this.detectedBuys.length >= this.maxBuys) {
+          this.logger.info(`Reached max transactions limit (${this.maxBuys}) for token ${this.targetToken}. Continuing scan but not adding more transactions.`);
+          // Don't set isComplete to true here - let the historical scan finish
+        }
+      } else {
+        // Log that we found a transaction but skipped adding it due to limit
+        this.logger.debug('TRANSACTION_SKIPPED_DUE_TO_LIMIT', {
+          ...buyData,
+          reason: 'Max transactions limit reached'
         });
       }
-      
-      // If no DEX instructions found, still check if there are token balance changes that look like buys
-      if (dexInstructions.length === 0) {
-        // Check if this might be a buy even without recognized DEX instructions
-        const potentialBuy = this.analyzePotentialBuy(balanceChanges, targetTokenChanges, transaction, signature, skipAddingBuys);
-        if (potentialBuy) {
-          return [potentialBuy];
-        }
-        return [];
-      }
 
-      const buys = [];
-      
-      // For each DEX instruction, check if it's a buy of our target token
-      for (const dexInstruction of dexInstructions) {
-        const buy = this.analyzeBuy(dexInstruction, balanceChanges, targetTokenChanges, transaction, signature, skipAddingBuys);
-        if (buy) {
-          buys.push(buy);
-        }
-      }
-
-      // If no buys found from DEX instructions, try the potential buy analysis
-      if (buys.length === 0) {
-        const potentialBuy = this.analyzePotentialBuy(balanceChanges, targetTokenChanges, transaction, signature, skipAddingBuys);
-        if (potentialBuy) {
-          buys.push(potentialBuy);
-        }
-      }
-
-      if (config.logging.enablePerformanceLogs && buys.length > 0) {
+      if (config.logging.enablePerformanceLogs) {
         const duration = Date.now() - startTime;
-        this.logger.logPerformance('DETECT_BUYS', duration, {
+        this.logger.logPerformance('DETECT_TRANSACTIONS', duration, {
           signature,
-          buyCount: buys.length,
-          instructionCount: decodedInstructions.length,
+          transactionCount: 1,
           balanceChangeCount: balanceChanges.length
         });
       }
 
-      return buys;
+      return [buyData];
     } catch (error) {
-      this.logger.error('Error detecting buys in transaction', { 
+      this.logger.error('Error detecting transactions in transaction', { 
         signature, 
         error: error.message 
       });

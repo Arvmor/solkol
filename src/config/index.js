@@ -64,6 +64,76 @@ export const config = {
       discriminators: {
         'new_order': [0x10, 0x2c, 0x0b, 0x6e, 0x3f, 0x54, 0x8a, 0x9c],
       }
-    }
+    },
+    openbook: {
+      programId: 'srmqPvymJeFKQ4zGQed1GFppgkRHL9kaELCbyksJtPX',
+      name: 'OpenBook',
+      discriminators: {
+        'new_order': [0x10, 0x2c, 0x0b, 0x6e, 0x3f, 0x54, 0x8a, 0x9c],
+      }
+    },
+    phoenix: {
+      programId: 'PhoeNiXZ8ByJGLkxNfZRnkUfjvmuYqLR89jjFHGqdXY',
+      name: 'Phoenix',
+      discriminators: {
+        'swap': [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+      }
+    },
+    step: {
+      programId: 'SSwpMgqNDsyV7mAgN9ady4bDVu5ySjmmXejXvy2vLt1',
+      name: 'Step',
+      discriminators: {
+        'swap': [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+      }
+    },
+    cykura: {
+      programId: 'cysPXAjehMpVKUapzbMCCnpFxUFFryEWEaLgnb9NrR8',
+      name: 'Cykura',
+      discriminators: {
+        'swap': [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+      }
+    },
+    goosefx: {
+      programId: '7WduLbRfYhTJktjLw5FDEyrqoEv61aTTCuGAetgLjzN5',
+      name: 'GooseFX',
+      discriminators: {
+        'swap': [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+      }
+    },
+    cropper: {
+      programId: 'CROPiAqv5Qn1eZ4w6K6Qw6Qw6Qw6Qw6Qw6Qw6Qw6', // Placeholder, please verify
+      name: 'Cropper',
+      discriminators: {
+        'swap': [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+      }
+    },
+    crema: {
+      programId: '6MLxLqiXaaSUpkgMnWDTuejNZEz3kE7k2woyHGVFw319',
+      name: 'Crema',
+      discriminators: {
+        'swap': [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+      }
+    },
+    aldrin: {
+      programId: 'AMM55ShdkoGRB5jVYPjWziwk8m5MpwyDgsMWHaMSQWH6',
+      name: 'Aldrin',
+      discriminators: {
+        'swap': [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+      }
+    },
+    pumpswap: {
+      programId: 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA', // Placeholder, please verify
+      name: 'Pumpswap',
+      discriminators: {
+        'swap': [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+      }
+    },
+    meteora: {
+      programId: 'Eo7WjKq67rjJQSZxS6z3YkapzY3eMj6Xy8X5EQVn5UaB',
+      name: 'Meteora',
+      discriminators: {
+        'swap': [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+      }
+    },
   }
 };

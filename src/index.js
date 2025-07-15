@@ -38,10 +38,10 @@ function promptForBlockNumber() {
 async function main() {
   const logger = new Logger(config.logging.level);
   
-  logger.info('🚀 Solana Token Buy Tracker Starting...', {
+  logger.info('🚀 Solana Token Transaction Tracker Starting...', {
     rpc_url: config.solana.rpcUrl,
     poll_interval: config.solana.slotPollInterval,
-    supported_dexes: Object.keys(config.dexPrograms)
+    tracking_approach: 'Any transaction with target token'
   });
 
   // Get token from user input
@@ -66,7 +66,7 @@ async function main() {
       process.exit(1);
     }
     
-    logger.info('✅ Service started successfully. Tracking buys for token:', { 
+    logger.info('✅ Service started successfully. Tracking transactions for token:', { 
       targetToken, 
       startingBlock: startingBlock || 'current' 
     });
