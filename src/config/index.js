@@ -17,6 +17,9 @@ export const config = {
     // Additional conservative settings
     maxSlotsPerBatch: parseInt(process.env.MAX_SLOTS_PER_BATCH) || 2, // Process max 2 slots at once
     slotProcessingDelay: parseInt(process.env.SLOT_PROCESSING_DELAY) || 1000, // 1 second between slots
+    // Historical scanning settings
+    historicalBatchSize: parseInt(process.env.HISTORICAL_BATCH_SIZE) || 10, // Process 10 historical blocks at once
+    historicalBatchDelay: parseInt(process.env.HISTORICAL_BATCH_DELAY) || 2000, // 2 seconds between historical batches
   },
   
   logging: {

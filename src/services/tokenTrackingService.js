@@ -48,7 +48,7 @@ export class TokenTrackingService {
     this.startProgressLogging();
 
     // Start processing blocks
-    await this.rpcService.startSlotPolling(this.onNewBlock.bind(this));
+    await this.rpcService.startSlotPolling(this.onNewBlock.bind(this), startingBlock);
     
     return true;
   }
@@ -73,6 +73,13 @@ export class TokenTrackingService {
     // Skip blocks before our starting block if specified
     if (this.buyTracker.startingBlock && slot < this.buyTracker.startingBlock) {
       return;
+    }
+
+    // If we have a starting block and we're now processing blocks newer than our starting block,
+    // and we've found enough buys, mark tracking as complete
+    if (this.buyTracker.startingBlock && slot > this.buyTracker.startingBlock && this.buyTracker.getBuyCount() >= this.buyTracker.maxBuys) {
+      this.logger.info('Historical scan complete and max buys reached, marking tracking as complete');
+      this.buyTracker.markComplete();
     }
 
     if (this.buyTracker.isTrackingComplete()) {

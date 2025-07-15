@@ -101,10 +101,23 @@ export class SolanaRPCService {
     this.requestCount++;
   }
 
-  async startSlotPolling(onNewBlock) {
+  async startSlotPolling(onNewBlock, startingBlock = null) {
     this.isRunning = true;
-    this.logger.info('Starting slot polling with conservative rate limiting');
+    this.logger.info('Starting slot polling with historical block scanning', { startingBlock });
 
+    // If starting block is specified, start from there instead of current slot
+    if (startingBlock && startingBlock < this.currentSlot) {
+      this.logger.info('Starting historical block scan', { 
+        startingBlock, 
+        currentSlot: this.currentSlot,
+        blocksToScan: this.currentSlot - startingBlock 
+      });
+      
+      // Scan historical blocks first
+      await this.scanHistoricalBlocks(startingBlock, this.currentSlot, onNewBlock);
+    }
+
+    // Continue with normal slot polling for new blocks
     while (this.isRunning) {
       try {
         const startTime = Date.now();
@@ -118,7 +131,7 @@ export class SolanaRPCService {
             config.solana.maxSlotsPerBatch
           );
           
-          this.logger.debug('Processing slots', { 
+          this.logger.debug('Processing new slots', { 
             currentSlot: this.currentSlot,
             latestSlot,
             slotsToProcess,
@@ -151,6 +164,57 @@ export class SolanaRPCService {
         await this.handleRetry(error);
       }
     }
+  }
+
+  async scanHistoricalBlocks(startBlock, endBlock, onNewBlock) {
+    this.logger.info('Starting historical block scan', { 
+      startBlock, 
+      endBlock, 
+      totalBlocks: endBlock - startBlock,
+      estimatedTimeMinutes: Math.ceil((endBlock - startBlock) * config.solana.historicalBatchDelay / 60000)
+    });
+    
+    const totalBlocks = endBlock - startBlock;
+    let processedBlocks = 0;
+    const batchSize = config.solana.historicalBatchSize; // Use configurable batch size
+    const startTime = Date.now();
+    
+    for (let currentBlock = startBlock; currentBlock < endBlock && this.isRunning; currentBlock += batchSize) {
+      const batchEnd = Math.min(currentBlock + batchSize, endBlock);
+      
+      this.logger.info('Processing historical block batch', {
+        batchStart: currentBlock,
+        batchEnd,
+        batchSize: batchEnd - currentBlock,
+        progress: `${processedBlocks}/${totalBlocks} (${((processedBlocks / totalBlocks) * 100).toFixed(1)}%)`,
+        elapsedMinutes: ((Date.now() - startTime) / 60000).toFixed(1)
+      });
+      
+      // Process blocks in this batch
+      for (let block = currentBlock; block < batchEnd && this.isRunning; block++) {
+        await this.processSlot(block, onNewBlock);
+        processedBlocks++;
+        
+        // Add delay between blocks to respect rate limits
+        if (block < batchEnd - 1) {
+          await this.sleep(config.solana.slotProcessingDelay);
+        }
+      }
+      
+      // Add longer delay between batches to be extra conservative
+      if (batchEnd < endBlock) {
+        await this.sleep(config.solana.historicalBatchDelay);
+      }
+    }
+    
+    const totalTimeMinutes = ((Date.now() - startTime) / 60000).toFixed(1);
+    this.logger.info('Historical block scan completed', { 
+      processedBlocks, 
+      totalBlocks,
+      totalTimeMinutes,
+      currentSlot: this.currentSlot,
+      averageTimePerBlock: (totalTimeMinutes / processedBlocks).toFixed(3) + ' minutes'
+    });
   }
 
   async processSlot(slot, onNewBlock) {

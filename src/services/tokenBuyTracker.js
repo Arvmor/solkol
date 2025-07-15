@@ -28,7 +28,7 @@ export class TokenBuyTracker {
   }
 
   async detectBuysInTransaction(transaction, signature) {
-    if (!this.targetToken || this.isComplete) {
+    if (!this.targetToken) {
       return [];
     }
 
@@ -36,6 +36,9 @@ export class TokenBuyTracker {
     if (this.startingBlock && transaction.slot < this.startingBlock) {
       return [];
     }
+
+    // If we've reached max buys, still process transactions but don't add new buys
+    const skipAddingBuys = this.detectedBuys.length >= this.maxBuys;
 
     try {
       const startTime = Date.now();
@@ -92,7 +95,7 @@ export class TokenBuyTracker {
       // If no DEX instructions found, still check if there are token balance changes that look like buys
       if (dexInstructions.length === 0) {
         // Check if this might be a buy even without recognized DEX instructions
-        const potentialBuy = this.analyzePotentialBuy(balanceChanges, targetTokenChanges, transaction, signature);
+        const potentialBuy = this.analyzePotentialBuy(balanceChanges, targetTokenChanges, transaction, signature, skipAddingBuys);
         if (potentialBuy) {
           return [potentialBuy];
         }
@@ -103,7 +106,7 @@ export class TokenBuyTracker {
       
       // For each DEX instruction, check if it's a buy of our target token
       for (const dexInstruction of dexInstructions) {
-        const buy = this.analyzeBuy(dexInstruction, balanceChanges, targetTokenChanges, transaction, signature);
+        const buy = this.analyzeBuy(dexInstruction, balanceChanges, targetTokenChanges, transaction, signature, skipAddingBuys);
         if (buy) {
           buys.push(buy);
         }
@@ -111,7 +114,7 @@ export class TokenBuyTracker {
 
       // If no buys found from DEX instructions, try the potential buy analysis
       if (buys.length === 0) {
-        const potentialBuy = this.analyzePotentialBuy(balanceChanges, targetTokenChanges, transaction, signature);
+        const potentialBuy = this.analyzePotentialBuy(balanceChanges, targetTokenChanges, transaction, signature, skipAddingBuys);
         if (potentialBuy) {
           buys.push(potentialBuy);
         }
@@ -137,7 +140,7 @@ export class TokenBuyTracker {
     }
   }
 
-  analyzePotentialBuy(allBalanceChanges, targetTokenChanges, transaction, signature) {
+  analyzePotentialBuy(allBalanceChanges, targetTokenChanges, transaction, signature, skipAddingBuys) {
     try {
       this.logger.debug('Starting potential buy analysis', {
         signature: signature.substring(0, 8) + '...',
@@ -263,16 +266,24 @@ export class TokenBuyTracker {
         confidence: 'medium', // Indicate this is a potential buy, not confirmed DEX buy
       };
 
-      // Store the buy
-      this.detectedBuys.push(buyData);
-      
-      // Log the detected buy
-      this.logger.info('POTENTIAL_BUY_DETECTED', buyData);
-      
-      // Check if we've reached our target
-      if (this.detectedBuys.length >= this.maxBuys) {
-        this.isComplete = true;
-        this.logger.info(`Completed tracking: Found ${this.maxBuys} buys for token ${this.targetToken}`);
+      // Store the buy (only if we haven't reached the limit)
+      if (!skipAddingBuys) {
+        this.detectedBuys.push(buyData);
+        
+        // Log the detected buy
+        this.logger.info('POTENTIAL_BUY_DETECTED', buyData);
+        
+        // Check if we've reached our target, but don't stop scanning historical blocks
+        if (this.detectedBuys.length >= this.maxBuys) {
+          this.logger.info(`Reached max buys limit (${this.maxBuys}) for token ${this.targetToken}. Continuing scan but not adding more buys.`);
+          // Don't set isComplete to true here - let the historical scan finish
+        }
+      } else {
+        // Log that we found a potential buy but skipped adding it due to limit
+        this.logger.debug('POTENTIAL_BUY_SKIPPED_DUE_TO_LIMIT', {
+          ...buyData,
+          reason: 'Max buys limit reached'
+        });
       }
       
       return buyData;
@@ -286,7 +297,7 @@ export class TokenBuyTracker {
     }
   }
 
-  analyzeBuy(swapInstruction, allBalanceChanges, targetTokenChanges, transaction, signature) {
+  analyzeBuy(swapInstruction, allBalanceChanges, targetTokenChanges, transaction, signature, skipAddingBuys) {
     try {
       // Find target token increases (buys)
       const targetTokenIncreases = targetTokenChanges.filter(change => {
@@ -383,16 +394,24 @@ export class TokenBuyTracker {
         confidence: 'high', // Confirmed DEX buy
       };
 
-      // Store the buy
-      this.detectedBuys.push(buyData);
-      
-      // Log the detected buy
-      this.logger.info('BUY_DETECTED', buyData);
-      
-      // Check if we've reached our target
-      if (this.detectedBuys.length >= this.maxBuys) {
-        this.isComplete = true;
-        this.logger.info(`Completed tracking: Found ${this.maxBuys} buys for token ${this.targetToken}`);
+      // Store the buy (only if we haven't reached the limit)
+      if (!skipAddingBuys) {
+        this.detectedBuys.push(buyData);
+        
+        // Log the detected buy
+        this.logger.info('BUY_DETECTED', buyData);
+        
+        // Check if we've reached our target, but don't stop scanning historical blocks
+        if (this.detectedBuys.length >= this.maxBuys) {
+          this.logger.info(`Reached max buys limit (${this.maxBuys}) for token ${this.targetToken}. Continuing scan but not adding more buys.`);
+          // Don't set isComplete to true here - let the historical scan finish
+        }
+      } else {
+        // Log that we found a buy but skipped adding it due to limit
+        this.logger.debug('BUY_SKIPPED_DUE_TO_LIMIT', {
+          ...buyData,
+          reason: 'Max buys limit reached'
+        });
       }
       
       return buyData;
@@ -465,6 +484,8 @@ export class TokenBuyTracker {
   }
 
   isTrackingComplete() {
+    // Only return true if explicitly set to complete, not just because we reached max buys
+    // This allows historical scanning to continue even after finding max buys
     return this.isComplete;
   }
 
@@ -481,5 +502,13 @@ export class TokenBuyTracker {
     this.detectedBuys = [];
     this.isComplete = false;
     this.targetToken = null;
+  }
+
+  markComplete() {
+    this.isComplete = true;
+    this.logger.info('Tracking marked as complete', { 
+      targetToken: this.targetToken,
+      totalBuys: this.detectedBuys.length 
+    });
   }
 }
