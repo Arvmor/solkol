@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { ApiService } from './services/apiService.js';
 
 interface BuyerAddress {
   address: string;
@@ -24,6 +25,7 @@ interface BuyerAddress {
 
 interface SearchData {
   id: string;
+  sessionId: string;
   tokenAddress: string;
   blockNumber: number;
   buyers: BuyerAddress[];
@@ -45,6 +47,38 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [serviceStatus, setServiceStatus] = useState<'idle' | 'running' | 'error'>('idle');
+  const [backendStatus, setBackendStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking');
+  
+  const apiService = useRef<ApiService | null>(null);
+  const progressInterval = useRef<NodeJS.Timeout | null>(null);
+
+  // Initialize API service and check backend connection
+  useEffect(() => {
+    if (!apiService.current) {
+      apiService.current = new ApiService();
+    }
+    
+    // Check backend health
+    checkBackendHealth();
+    
+    // Cleanup on unmount
+    return () => {
+      if (progressInterval.current) {
+        clearInterval(progressInterval.current);
+      }
+    };
+  }, []);
+
+  const checkBackendHealth = async () => {
+    try {
+      setBackendStatus('checking');
+      await apiService.current?.healthCheck();
+      setBackendStatus('connected');
+    } catch (error) {
+      console.error('Backend health check failed:', error);
+      setBackendStatus('disconnected');
+    }
+  };
 
   // Get all unique addresses and their occurrences across searches
   const getAllAddresses = () => {
@@ -71,9 +105,68 @@ function App() {
 
   const addressCounts = getAllAddresses();
 
+  // Start progress monitoring
+  const startProgressMonitoring = (sessionId: string, searchId: string) => {
+    if (progressInterval.current) {
+      clearInterval(progressInterval.current);
+    }
+    
+    progressInterval.current = setInterval(async () => {
+      if (!apiService.current) return;
+      
+      try {
+        const response = await apiService.current.getTrackingProgress(sessionId);
+        
+        setSearches(prev => prev.map(search => {
+          if (search.id === searchId) {
+            const convertedBuys = response.buyers ? response.buyers.map((buy: any) => 
+              apiService.current!.convertBuyData(buy)
+            ) : [];
+            
+            return {
+              ...search,
+              buyers: convertedBuys,
+              progress: response.progress,
+              isLoading: response.status === 'running' || response.status === 'starting',
+              error: response.status === 'error' ? response.error : undefined
+            };
+          }
+          return search;
+        }));
+        
+        // Stop monitoring if complete or error
+        if (response.status === 'error' || response.isComplete) {
+          clearInterval(progressInterval.current!);
+          setIsLoading(false);
+          setServiceStatus(response.status === 'error' ? 'error' : 'idle');
+        }
+      } catch (error) {
+        console.error('Error getting tracking progress:', error);
+        setSearches(prev => prev.map(search => 
+          search.id === searchId 
+            ? { ...search, isLoading: false, error: 'Failed to get progress' }
+            : search
+        ));
+        clearInterval(progressInterval.current!);
+        setIsLoading(false);
+        setServiceStatus('error');
+      }
+    }, 2000); // Update every 2 seconds
+  };
+
   const handleSearch = async () => {
     if (!tokenInput.trim() || !blockInput.trim()) {
       setError('Please enter both token address and block number');
+      return;
+    }
+
+    if (!apiService.current) {
+      setError('API service not initialized');
+      return;
+    }
+
+    if (backendStatus !== 'connected') {
+      setError('Backend server is not connected. Please start the backend server.');
       return;
     }
 
@@ -85,6 +178,7 @@ function App() {
 
     const newSearch: SearchData = {
       id: searchId,
+      sessionId: '',
       tokenAddress: tokenInput.trim(),
       blockNumber: parseInt(blockInput),
       buyers: [],
@@ -95,41 +189,53 @@ function App() {
 
     setSearches(prev => [newSearch, ...prev]);
 
-    // Simulate tracking for demo purposes
-    setTimeout(() => {
-      setSearches(prev => prev.map(search => {
-        if (search.id === searchId) {
-          return {
-            ...search,
-            isLoading: false,
-            progress: { current: 100, target: 100, percentage: '100.0', isComplete: true },
-            buyers: [
-              {
-                address: 'DemoBuyer123456789012345678901234567890',
-                tokenAmount: 1000,
-                solAmount: 0.5,
-                signature: 'DemoSignature123456789012345678901234567890',
-                timestamp: Date.now(),
-                dex: 'Jupiter',
-                buyer: 'DemoBuyer123456789012345678901234567890',
-                amountBought: '1000',
-                amountSold: '0.5',
-                decimalsTarget: 9,
-                decimalsSold: 9,
-                pricePerToken: '0.0005',
-                confidence: 'high'
-              }
-            ]
-          };
-        }
-        return search;
-      }));
+    try {
+      // Start the token tracking via API
+      const response = await apiService.current.startTracking(
+        tokenInput.trim(),
+        parseInt(blockInput)
+      );
+
+      // Update search with session ID
+      setSearches(prev => prev.map(search => 
+        search.id === searchId 
+          ? { ...search, sessionId: response.sessionId }
+          : search
+      ));
+
+      // Start monitoring progress
+      startProgressMonitoring(response.sessionId, searchId);
+
+    } catch (error) {
+      console.error('Error starting token tracking:', error);
+      setError(error instanceof Error ? error.message : 'Failed to start token tracking');
       setIsLoading(false);
-      setServiceStatus('idle');
-    }, 2000);
+      setServiceStatus('error');
+      
+      // Update the search with error state
+      setSearches(prev => prev.map(search => 
+        search.id === searchId 
+          ? { ...search, isLoading: false, error: 'Failed to start tracking' }
+          : search
+      ));
+    }
   };
 
-  const stopTracking = () => {
+  const stopTracking = async () => {
+    // Stop all active sessions
+    for (const search of searches) {
+      if (search.sessionId && search.isLoading) {
+        try {
+          await apiService.current?.stopTracking(search.sessionId);
+        } catch (error) {
+          console.error('Error stopping session:', error);
+        }
+      }
+    }
+
+    if (progressInterval.current) {
+      clearInterval(progressInterval.current);
+    }
     setIsLoading(false);
     setServiceStatus('idle');
   };
@@ -165,7 +271,7 @@ function App() {
           <p className="text-gray-600">
             Track real token buyer addresses by token and block number. Duplicate addresses across different tokens are highlighted.
           </p>
-          <div className="mt-4">
+          <div className="mt-4 flex justify-center gap-4">
             <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
               serviceStatus === 'running' ? 'bg-green-100 text-green-800' :
               serviceStatus === 'error' ? 'bg-red-100 text-red-800' :
@@ -173,8 +279,37 @@ function App() {
             }`}>
               Status: {serviceStatus === 'running' ? 'Tracking' : serviceStatus === 'error' ? 'Error' : 'Ready'}
             </span>
+            <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+              backendStatus === 'connected' ? 'bg-green-100 text-green-800' :
+              backendStatus === 'disconnected' ? 'bg-red-100 text-red-800' :
+              'bg-yellow-100 text-yellow-800'
+            }`}>
+              Backend: {backendStatus === 'connected' ? 'Connected' : backendStatus === 'disconnected' ? 'Disconnected' : 'Checking...'}
+            </span>
           </div>
         </div>
+
+        {/* Backend Connection Warning */}
+        {backendStatus === 'disconnected' && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-red-800">
+                  Backend Server Not Connected
+                </h3>
+                <div className="mt-2 text-sm text-red-700">
+                  <p>Please start the backend server by running:</p>
+                  <code className="bg-red-100 px-2 py-1 rounded mt-1 inline-block">npm run api:dev</code>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Search Form */}
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
@@ -189,7 +324,7 @@ function App() {
                 onChange={(e) => setTokenInput(e.target.value)}
                 placeholder="Enter token mint address"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled={isLoading}
+                disabled={isLoading || backendStatus !== 'connected'}
               />
             </div>
             <div>
@@ -202,7 +337,7 @@ function App() {
                 onChange={(e) => setBlockInput(e.target.value)}
                 placeholder="Enter block number"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled={isLoading}
+                disabled={isLoading || backendStatus !== 'connected'}
               />
             </div>
           </div>
@@ -216,9 +351,9 @@ function App() {
           <div className="flex gap-4">
             <button
               onClick={handleSearch}
-              disabled={isLoading}
+              disabled={isLoading || backendStatus !== 'connected'}
               className={`px-6 py-2 rounded-md font-medium ${
-                isLoading 
+                isLoading || backendStatus !== 'connected'
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
                   : 'bg-blue-600 text-white hover:bg-blue-700'
               }`}
