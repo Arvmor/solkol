@@ -245,7 +245,7 @@ export class TokenBuyTracker {
         programId: 'unknown',
         slot: transaction.slot,
         buyNumber: this.detectedBuys.length + 1,
-        buyer: this.extractBuyer(transaction, targetTokenBuy.accountIndex),
+        buyer: this.extractBuyer(transaction),
         pricePerToken: this.calculatePrice(tokenSold, targetTokenBuy),
         confidence: 'medium', // Indicate this is a potential buy, not confirmed DEX buy
       };
@@ -373,7 +373,7 @@ export class TokenBuyTracker {
         programId: swapInstruction.programId,
         slot: transaction.slot,
         buyNumber: this.detectedBuys.length + 1,
-        buyer: this.extractBuyer(transaction, targetTokenBuy.accountIndex),
+        buyer: this.extractBuyer(transaction),
         pricePerToken: this.calculatePrice(tokenSold, targetTokenBuy),
         confidence: 'high', // Confirmed DEX buy
       };
@@ -412,21 +412,21 @@ export class TokenBuyTracker {
 
   extractBuyer(transaction, targetAccountIndex) {
     try {
-      // Try to get the account that received the tokens
+      // Get the transaction signer (fee payer) - this is the actual buyer
+      // The first account in accountKeys is always the fee payer/signer
       const accounts = transaction.transaction.message.accountKeys || 
                      transaction.transaction.message.staticAccountKeys || [];
       
-      if (targetAccountIndex < accounts.length) {
-        return accounts[targetAccountIndex].toString();
-      }
-      
-      // Fallback to first signer (usually the buyer)
-      if (transaction.transaction.message.accountKeys && transaction.transaction.message.accountKeys.length > 0) {
-        return transaction.transaction.message.accountKeys[0].toString();
+      if (accounts.length > 0) {
+        return accounts[0].toString();
       }
       
       return 'unknown';
     } catch (error) {
+      this.logger.error('Error extracting buyer from transaction', { 
+        error: error.message,
+        signature: transaction.transaction?.signatures?.[0] || 'unknown'
+      });
       return 'unknown';
     }
   }
