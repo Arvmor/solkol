@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { TokenTrackingService } from './services/tokenTrackingService.js';
 
 interface BuyerAddress {
   address: string;
@@ -6,9 +7,24 @@ interface BuyerAddress {
   solAmount: number;
   signature: string;
   timestamp: number;
+  // Additional fields from the real service
+  dex?: string;
+  targetToken?: string;
+  tokenSold?: string;
+  amountBought?: string;
+  amountSold?: string;
+  decimalsTarget?: number;
+  decimalsSold?: number;
+  instructionType?: string;
+  programId?: string;
+  slot?: number;
+  buyNumber?: number;
+  buyer?: string;
+  pricePerToken?: string;
+  confidence?: string;
 }
 
-interface TokenSearch {
+interface SearchData {
   id: string;
   tokenAddress: string;
   blockNumber: number;
@@ -16,29 +32,59 @@ interface TokenSearch {
   timestamp: number;
   isLoading: boolean;
   error?: string;
+  progress?: {
+    current: number;
+    target: number;
+    percentage: string;
+    isComplete: boolean;
+  };
 }
 
 function App() {
-  const [searches, setSearches] = useState<TokenSearch[]>([]);
+  const [searches, setSearches] = useState<SearchData[]>([]);
   const [tokenInput, setTokenInput] = useState('');
   const [blockInput, setBlockInput] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [serviceStatus, setServiceStatus] = useState<'idle' | 'running' | 'error'>('idle');
+  
+  const tokenTrackingService = useRef<TokenTrackingService | null>(null);
+  const currentSearchId = useRef<string | null>(null);
+  const progressInterval = useRef<NodeJS.Timeout | null>(null);
+
+  // Initialize service
+  useEffect(() => {
+    if (!tokenTrackingService.current) {
+      tokenTrackingService.current = new TokenTrackingService();
+    }
+    
+    // Cleanup on unmount
+    return () => {
+      if (tokenTrackingService.current) {
+        tokenTrackingService.current.stop();
+      }
+      if (progressInterval.current) {
+        clearInterval(progressInterval.current);
+      }
+    };
+  }, []);
 
   // Get all unique addresses and their occurrences across searches
   const getAllAddresses = () => {
     const addressCounts = new Map<string, { count: number; tokens: string[] }>();
     
-    searches.forEach((search: TokenSearch) => {
+    searches.forEach(search => {
       const tokenShort = `${search.tokenAddress.slice(0, 8)}...`;
       search.buyers.forEach((buyer: BuyerAddress) => {
-        const current = addressCounts.get(buyer.address);
+        const address = buyer.buyer || buyer.address;
+        const current = addressCounts.get(address);
         if (current) {
           current.count += 1;
           if (!current.tokens.includes(tokenShort)) {
             current.tokens.push(tokenShort);
           }
         } else {
-          addressCounts.set(buyer.address, { count: 1, tokens: [tokenShort] });
+          addressCounts.set(address, { count: 1, tokens: [tokenShort] });
         }
       });
     });
@@ -48,114 +94,178 @@ function App() {
 
   const addressCounts = getAllAddresses();
 
-  // Mock function to simulate fetching buyer data
-  const fetchBuyersForToken = async (tokenAddress: string, blockNumber: number): Promise<BuyerAddress[]> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
-    
-    // Mock data - in real implementation, this would call your Solana service
-    const mockBuyers: BuyerAddress[] = [];
-    const numBuyers = Math.floor(Math.random() * 8) + 3; // 3-10 buyers
-    
-    const mockAddresses = [
-      '8WzsEsjJGMPZjh2FCGWT5P4tCfLdAJPcJJJJJJJJJJJJ',
-      '6KP8WxKRGVmQVZhPtCfGYT3PtJhKJWxPdJPdJPdJPd',
-      '9XKShKYhPwQVZiFHGYT8PtJgLdAJPcFdJdJdJdJdJd',
-      '7QJKSkYhPwQmVZiFHRYT5PtCfLAAJPcJJJJJJJJJJJ',
-      '5MJKShKYhPwQVZiFHAYT6PtJgLdAJPcJJJJJJJJJJJ',
-      '4LJKShKYhPwQVZiFHBYT7PtJgLdAJPcJJJJJJJJJJJ',
-      '3KJKShKYhPwQVZiFHCYT8PtJgLdAJPcJJJJJJJJJJJ',
-      '2IJKShKYhPwQVZiFHDYT9PtJgLdAJPcJJJJJJJJJJJ',
-      '1HJKShKYhPwQVZiFHEYT1PtJgLdAJPcJJJJJJJJJJJ',
-      '9GJKShKYhPwQVZiFHFYT2PtJgLdAJPcJJJJJJJJJJJ'
-    ];
-    
-    for (let i = 0; i < numBuyers; i++) {
-      mockBuyers.push({
-        address: mockAddresses[i % mockAddresses.length],
-        tokenAmount: Math.random() * 1000000,
-        solAmount: Math.random() * 50,
-        signature: `${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}`,
-        timestamp: Date.now() - Math.random() * 3600000 // Within last hour
-      });
+  // Convert service buy data to UI format
+  const convertServiceBuyToUI = (buy: any): BuyerAddress => {
+    return {
+      address: buy.buyer || 'unknown',
+      tokenAmount: parseFloat(buy.amountBought || '0'),
+      solAmount: parseFloat(buy.amountSold || '0'),
+      signature: buy.txHash || '',
+      timestamp: buy.timestamp * 1000, // Convert to milliseconds
+      dex: buy.dex,
+      targetToken: buy.targetToken,
+      tokenSold: buy.tokenSold,
+      amountBought: buy.amountBought,
+      amountSold: buy.amountSold,
+      decimalsTarget: buy.decimalsTarget,
+      decimalsSold: buy.decimalsSold,
+      instructionType: buy.instructionType,
+      programId: buy.programId,
+      slot: buy.slot,
+      buyNumber: buy.buyNumber,
+      buyer: buy.buyer,
+      pricePerToken: buy.pricePerToken,
+      confidence: buy.confidence,
+    };
+  };
+
+  // Start progress monitoring
+  const startProgressMonitoring = (searchId: string) => {
+    if (progressInterval.current) {
+      clearInterval(progressInterval.current);
     }
     
-    return mockBuyers;
+    progressInterval.current = setInterval(() => {
+      if (!tokenTrackingService.current) return;
+      
+      const stats = tokenTrackingService.current.getStats();
+      const buys = tokenTrackingService.current.buyTracker.getDetectedBuys();
+      const progress = tokenTrackingService.current.buyTracker.getProgress();
+      
+      setSearches(prev => prev.map(search => {
+        if (search.id === searchId) {
+          const convertedBuys = buys.map(convertServiceBuyToUI);
+          return {
+            ...search,
+            buyers: convertedBuys,
+            progress: progress,
+            isLoading: !progress.isComplete
+          };
+        }
+        return search;
+      }));
+      
+      // Stop monitoring if complete
+      if (progress.isComplete) {
+        clearInterval(progressInterval.current!);
+        setIsLoading(false);
+        setServiceStatus('idle');
+      }
+    }, 2000); // Update every 2 seconds
   };
 
   const handleSearch = async () => {
     if (!tokenInput.trim() || !blockInput.trim()) {
-      alert('Please enter both token address and block number');
+      setError('Please enter both token address and block number');
       return;
     }
 
+    if (!tokenTrackingService.current) {
+      setError('Token tracking service not initialized');
+      return;
+    }
+
+    setError(null);
+    setIsLoading(true);
+    setServiceStatus('running');
+
     const searchId = Date.now().toString();
-    const newSearch: TokenSearch = {
+    currentSearchId.current = searchId;
+
+    const newSearch: SearchData = {
       id: searchId,
       tokenAddress: tokenInput.trim(),
       blockNumber: parseInt(blockInput),
       buyers: [],
       timestamp: Date.now(),
-      isLoading: true
+      isLoading: true,
+      progress: { current: 0, target: 100, percentage: '0.0', isComplete: false }
     };
 
-    setSearches((prev: TokenSearch[]) => [newSearch, ...prev]);
-    setIsSearching(true);
+    setSearches(prev => [newSearch, ...prev]);
 
     try {
-      const buyers = await fetchBuyersForToken(tokenInput.trim(), parseInt(blockInput));
-      
-      setSearches((prev: TokenSearch[]) => 
-        prev.map((search: TokenSearch) => 
-          search.id === searchId 
-            ? { ...search, buyers, isLoading: false }
-            : search
-        )
+      // Start the token tracking service
+      const success = await tokenTrackingService.current.start(
+        tokenInput.trim(),
+        parseInt(blockInput)
       );
+
+      if (success) {
+        startProgressMonitoring(searchId);
+      } else {
+        throw new Error('Failed to start token tracking service');
+      }
     } catch (error) {
-      setSearches((prev: TokenSearch[]) => 
-        prev.map((search: TokenSearch) => 
-          search.id === searchId 
-            ? { ...search, isLoading: false, error: error instanceof Error ? error.message : 'Unknown error' }
-            : search
-        )
-      );
-    } finally {
-      setIsSearching(false);
+      console.error('Error starting token tracking:', error);
+      setError(error instanceof Error ? error.message : 'Failed to start token tracking');
+      setIsLoading(false);
+      setServiceStatus('error');
+      
+      // Update the search with error state
+      setSearches(prev => prev.map(search => 
+        search.id === searchId 
+          ? { ...search, isLoading: false, error: 'Failed to start tracking' }
+          : search
+      ));
     }
   };
 
-  const clearSearches = () => {
-    setSearches([]);
+  const stopTracking = () => {
+    if (tokenTrackingService.current) {
+      tokenTrackingService.current.stop();
+    }
+    if (progressInterval.current) {
+      clearInterval(progressInterval.current);
+    }
+    setIsLoading(false);
+    setServiceStatus('idle');
   };
 
   const formatAddress = (address: string) => {
+    if (!address || address === 'unknown') return 'Unknown';
     return `${address.slice(0, 8)}...${address.slice(-8)}`;
   };
 
-  const formatAmount = (amount: number) => {
-    return amount.toLocaleString(undefined, { maximumFractionDigits: 6 });
+  const formatAmount = (amount: string | number, decimals: number = 9) => {
+    if (!amount) return '0';
+    const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+    const adjusted = num / Math.pow(10, decimals);
+    return adjusted.toLocaleString(undefined, { maximumFractionDigits: 6 });
   };
 
   const isAddressDuplicate = (address: string) => {
     const info = addressCounts.get(address);
-    return info && info.count > 1;
+    return info ? info.count > 1 : false;
+  };
+
+  const clearAllSearches = () => {
+    setSearches([]);
   };
 
   return (
     <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+        <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
             Token Buyer Address Tracker
           </h1>
           <p className="text-gray-600">
-            Search for buyer addresses by token and block number. Duplicate addresses across different tokens are highlighted.
+            Track real token buyer addresses by token and block number. Duplicate addresses across different tokens are highlighted.
           </p>
+          <div className="mt-4">
+            <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+              serviceStatus === 'running' ? 'bg-green-100 text-green-800' :
+              serviceStatus === 'error' ? 'bg-red-100 text-red-800' :
+              'bg-gray-100 text-gray-800'
+            }`}>
+              Status: {serviceStatus === 'running' ? 'Tracking' : serviceStatus === 'error' ? 'Error' : 'Ready'}
+            </span>
+          </div>
         </div>
 
-        {/* Search Controls */}
+        {/* Search Form */}
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
@@ -168,12 +278,12 @@ function App() {
                 onChange={(e) => setTokenInput(e.target.value)}
                 placeholder="Enter token mint address"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled={isSearching}
+                disabled={isLoading}
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Block Number *
+                Starting Block Number *
               </label>
               <input
                 type="number"
@@ -181,64 +291,80 @@ function App() {
                 onChange={(e) => setBlockInput(e.target.value)}
                 placeholder="Enter block number"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled={isSearching}
+                disabled={isLoading}
               />
             </div>
           </div>
+          
+          {error && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+              <p className="text-sm text-red-600">{error}</p>
+            </div>
+          )}
 
-          <div className="flex items-center justify-between">
-            <div className="flex gap-4">
+          <div className="flex gap-4">
+            <button
+              onClick={handleSearch}
+              disabled={isLoading}
+              className={`px-6 py-2 rounded-md font-medium ${
+                isLoading 
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
+            >
+              {isLoading ? 'Tracking...' : 'Start Tracking'}
+            </button>
+            
+            {isLoading && (
               <button
-                onClick={handleSearch}
-                disabled={isSearching}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={stopTracking}
+                className="px-6 py-2 bg-red-600 text-white rounded-md font-medium hover:bg-red-700"
               >
-                {isSearching ? 'Searching...' : 'Search Buyers'}
+                Stop Tracking
               </button>
+            )}
+            
+            {searches.length > 0 && (
               <button
-                onClick={clearSearches}
-                disabled={searches.length === 0}
-                className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={clearAllSearches}
+                className="px-6 py-2 bg-gray-600 text-white rounded-md font-medium hover:bg-gray-700"
               >
-                Clear All Searches
+                Clear All
               </button>
-            </div>
-            <div className="text-sm text-gray-600">
-              Total searches: {searches.length}
-            </div>
+            )}
           </div>
         </div>
 
         {/* Duplicate Addresses Summary */}
         {addressCounts.size > 0 && (
           <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
               Duplicate Addresses Summary
-            </h2>
+            </h3>
             <div className="grid gap-2">
               {Array.from(addressCounts.entries())
                 .filter(([_, info]) => info.count > 1)
                 .sort((a, b) => b[1].count - a[1].count)
                 .map(([address, info]) => (
                   <div key={address} className="flex items-center justify-between p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-                    <div className="font-mono text-sm">
-                      {formatAddress(address)}
-                    </div>
-                    <div className="text-sm text-gray-600">
-                      Found in {info.count} searches across tokens: {info.tokens.join(', ')}
+                    <span className="font-mono text-sm">{formatAddress(address)}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-600">
+                        {info.count} buys across {info.tokens.join(', ')}
+                      </span>
                     </div>
                   </div>
                 ))}
+              {Array.from(addressCounts.entries()).filter(([_, info]) => info.count > 1).length === 0 && (
+                <p className="text-gray-500 text-sm">No duplicate addresses found yet.</p>
+              )}
             </div>
-            {Array.from(addressCounts.entries()).filter(([_, info]) => info.count > 1).length === 0 && (
-              <p className="text-gray-500 text-sm">No duplicate addresses found yet.</p>
-            )}
           </div>
         )}
 
         {/* Search Results */}
         <div className="space-y-6">
-          {searches.map((search) => (
+          {searches.map(search => (
             <div key={search.id} className="bg-white rounded-lg shadow-sm p-6">
               <div className="flex items-center justify-between mb-4">
                 <div>
@@ -246,56 +372,70 @@ function App() {
                     Token: {formatAddress(search.tokenAddress)}
                   </h3>
                   <p className="text-sm text-gray-600">
-                    Block: {search.blockNumber.toLocaleString()} • 
-                    Searched: {new Date(search.timestamp).toLocaleString()}
+                    Block: {search.blockNumber.toLocaleString()} • Started: {new Date(search.timestamp).toLocaleString()}
                   </p>
                 </div>
-                <div className="text-sm text-gray-600">
-                  {search.isLoading ? (
-                    <span className="text-blue-600">Loading...</span>
-                  ) : search.error ? (
-                    <span className="text-red-600">Error: {search.error}</span>
-                  ) : (
-                    <span>{search.buyers.length} buyers found</span>
+                <div className="text-right">
+                  {search.isLoading && (
+                    <div className="flex items-center gap-2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                      <span className="text-sm text-gray-600">Tracking...</span>
+                    </div>
+                  )}
+                  {search.error && (
+                    <span className="text-sm text-red-600">Error: {search.error}</span>
                   )}
                 </div>
               </div>
 
-              {search.isLoading && (
-                <div className="flex items-center justify-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              {/* Progress Bar */}
+              {search.progress && (
+                <div className="mb-4">
+                  <div className="flex justify-between text-sm text-gray-600 mb-1">
+                    <span>Progress: {search.progress.current}/{search.progress.target}</span>
+                    <span>{search.progress.percentage}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div 
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${search.progress.percentage}%` }}
+                    ></div>
+                  </div>
                 </div>
               )}
 
-              {search.error && (
-                <div className="text-center py-8 text-red-600">
-                  Failed to load buyer data: {search.error}
-                </div>
-              )}
+              <div className="text-sm text-gray-600 mb-4">
+                Found {search.buyers.length} buyer{search.buyers.length !== 1 ? 's' : ''}
+              </div>
 
-              {!search.isLoading && !search.error && search.buyers.length > 0 && (
+              {search.buyers.length > 0 ? (
                 <div className="overflow-x-auto">
-                  <table className="w-full table-auto">
-                    <thead>
-                      <tr className="bg-gray-50">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Buy #</th>
                         <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Buyer Address</th>
                         <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Token Amount</th>
-                        <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">SOL Amount</th>
-                        <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Transaction</th>
+                        <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Amount Sold</th>
+                        <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">DEX</th>
+                        <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Price</th>
+                        <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Signature</th>
+                        <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Time</th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="bg-white divide-y divide-gray-200">
                       {search.buyers.map((buyer, index) => (
                         <tr 
                           key={index} 
-                          className={`border-t ${isAddressDuplicate(buyer.address) ? 'bg-yellow-50' : ''}`}
+                          className={`border-t ${isAddressDuplicate(buyer.buyer || buyer.address) ? 'bg-yellow-50' : ''}`}
                         >
                           <td className="px-4 py-2 text-sm text-gray-900">
+                            {buyer.buyNumber || index + 1}
+                          </td>
+                          <td className="px-4 py-2 text-sm text-gray-900">
                             <div className="flex items-center gap-2">
-                              <span className="font-mono">
-                                {formatAddress(buyer.address)}
-                              </span>
-                              {isAddressDuplicate(buyer.address) && (
+                              <span className="font-mono">{formatAddress(buyer.buyer || buyer.address)}</span>
+                              {isAddressDuplicate(buyer.buyer || buyer.address) && (
                                 <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 rounded-full">
                                   Duplicate
                                 </span>
@@ -303,41 +443,56 @@ function App() {
                             </div>
                           </td>
                           <td className="px-4 py-2 text-sm text-gray-900">
-                            {formatAmount(buyer.tokenAmount)}
+                            {formatAmount(buyer.amountBought || buyer.tokenAmount, buyer.decimalsTarget)}
                           </td>
                           <td className="px-4 py-2 text-sm text-gray-900">
-                            {formatAmount(buyer.solAmount)} SOL
+                            {formatAmount(buyer.amountSold || buyer.solAmount, buyer.decimalsSold)}
                           </td>
                           <td className="px-4 py-2 text-sm text-gray-900">
-                            <a
+                            <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full ${
+                              buyer.confidence === 'high' ? 'bg-green-100 text-green-800' :
+                              buyer.confidence === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {buyer.dex || 'Unknown'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 text-sm text-gray-900">
+                            {buyer.pricePerToken ? parseFloat(buyer.pricePerToken).toFixed(6) : 'N/A'}
+                          </td>
+                          <td className="px-4 py-2 text-sm text-gray-900">
+                            <a 
                               href={`https://solscan.io/tx/${buyer.signature}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-blue-600 hover:text-blue-800 font-mono"
                             >
-                              {buyer.signature.substring(0, 8)}...
+                              {buyer.signature.slice(0, 8)}...
                             </a>
+                          </td>
+                          <td className="px-4 py-2 text-sm text-gray-900">
+                            {new Date(buyer.timestamp).toLocaleString()}
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              )}
-
-              {!search.isLoading && !search.error && search.buyers.length === 0 && (
+              ) : (
                 <div className="text-center py-8 text-gray-500">
-                  No buyers found for this token at the specified block.
+                  {search.isLoading ? 'Searching for buyers...' : 'No buyers found for this token and block range.'}
                 </div>
               )}
             </div>
           ))}
         </div>
 
+        {/* Help Text */}
         {searches.length === 0 && (
-          <div className="bg-white rounded-lg shadow-sm p-6 text-center">
-            <p className="text-gray-500">
-              Enter a token address and block number above to start searching for buyer addresses.
+          <div className="text-center py-12 text-gray-500">
+            <p className="text-lg mb-4">Ready to track token buyers</p>
+            <p className="text-sm">
+              Enter a token address and starting block number above to begin tracking buyer addresses in real-time.
             </p>
           </div>
         )}
