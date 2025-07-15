@@ -3,6 +3,14 @@ declare module '*.js' {
   export default content;
 }
 
+declare module '../utils/validation.js' {
+  export function isValidTokenMint(tokenMint: string): boolean;
+}
+
+declare module '../utils/shutdown.js' {
+  export function setupGracefulShutdown(service: any, logger: any, onShutdown?: () => void): void;
+}
+
 declare module './services/tokenTrackingService.js' {
   export class TokenTrackingService {
     constructor();

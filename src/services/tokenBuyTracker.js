@@ -11,7 +11,6 @@ export class TokenBuyTracker {
     this.detectedBuys = [];
     this.maxBuys = 100;
     this.isComplete = false;
-    this.debugCounter = 0;
   }
 
   setTargetToken(tokenMint, startingBlock = null) {
@@ -19,7 +18,6 @@ export class TokenBuyTracker {
     this.startingBlock = startingBlock;
     this.detectedBuys = [];
     this.isComplete = false;
-    this.debugCounter = 0;
     this.logger.info('Target token set', { 
       tokenMint, 
       startingBlock, 
@@ -51,23 +49,9 @@ export class TokenBuyTracker {
         change.mint === this.targetToken
       );
 
-      // Debug logging for transactions with target token involvement
-      if (targetTokenChanges.length > 0) {
-        this.debugCounter++;
-        if (this.debugCounter % 10 === 0) { // Log every 10th transaction with target token
-          this.logger.debug('Found transaction with target token', {
-            signature: signature.substring(0, 8) + '...',
-            slot: transaction.slot,
-            targetTokenChanges: targetTokenChanges.length,
-            allBalanceChanges: balanceChanges.length,
-            targetToken: this.targetToken,
-            targetTokenChangesDetails: targetTokenChanges.map(change => ({
-              delta: change.delta,
-              accountIndex: change.accountIndex,
-              decimals: change.decimals
-            }))
-          });
-        }
+      // Check if this transaction involves our target token
+      if (targetTokenChanges.length === 0) {
+        return [];
       }
 
       if (targetTokenChanges.length === 0) {

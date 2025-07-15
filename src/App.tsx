@@ -53,7 +53,6 @@ function App() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   
   const apiService = useRef<ApiService | null>(null);
-  const progressIntervals = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const globalProgressInterval = useRef<NodeJS.Timeout | null>(null);
   const searchesRef = useRef<SearchData[]>([]);
 
@@ -76,9 +75,6 @@ function App() {
     
     // Cleanup on unmount
     return () => {
-      // Clear all intervals
-      progressIntervals.current.forEach(interval => clearInterval(interval));
-      progressIntervals.current.clear();
       if (globalProgressInterval.current) {
         clearInterval(globalProgressInterval.current);
       }
@@ -91,7 +87,6 @@ function App() {
       await apiService.current?.healthCheck();
       setBackendStatus('connected');
     } catch (error) {
-      console.error('Backend health check failed:', error);
       setBackendStatus('disconnected');
     }
   };
@@ -212,14 +207,6 @@ function App() {
         try {
           const response = await apiService.current!.getTrackingProgress(search.sessionId);
           
-          // Debug logging
-          console.log(`Session ${search.sessionId} response:`, {
-            status: response.status,
-            buyersCount: response.buyers?.length || 0,
-            progress: response.progress,
-            isComplete: response.isComplete
-          });
-          
           const convertedBuys = response.buyers ? response.buyers.map((buy: any) => 
             apiService.current!.convertBuyData(buy)
           ) : [];
@@ -235,7 +222,6 @@ function App() {
             }
           };
         } catch (error) {
-          console.error(`Error getting progress for session ${search.sessionId}:`, error);
           return {
             searchId: search.id,
             data: {
@@ -274,79 +260,6 @@ function App() {
       });
       
     }, 2000); // Update every 2 seconds
-  };
-
-  // Start individual session monitoring (for immediate updates)
-  const startSessionMonitoring = (sessionId: string, searchId: string) => {
-    // Clear any existing interval for this session
-    if (progressIntervals.current.has(searchId)) {
-      clearInterval(progressIntervals.current.get(searchId)!);
-    }
-    
-    const interval = setInterval(async () => {
-      if (!apiService.current) return;
-      
-      try {
-        const response = await apiService.current.getTrackingProgress(sessionId);
-        
-        // Debug logging for individual session
-        console.log(`Individual session ${sessionId} response:`, {
-          status: response.status,
-          buyersCount: response.buyers?.length || 0,
-          progress: response.progress,
-          isComplete: response.isComplete
-        });
-        
-        setSearches(prev => prev.map(search => {
-          if (search.id === searchId) {
-            const convertedBuys = response.buyers ? response.buyers.map((buy: any) => 
-              apiService.current!.convertBuyData(buy)
-            ) : [];
-            
-            const updatedSearch = {
-              ...search,
-              buyers: convertedBuys,
-              progress: response.progress,
-              isLoading: response.status === 'running' || response.status === 'starting',
-              error: response.status === 'error' ? response.error : undefined
-            };
-            
-            // If session is complete or has error, stop monitoring
-            if (response.status === 'error' || response.isComplete) {
-              updatedSearch.isLoading = false;
-              clearInterval(progressIntervals.current.get(searchId)!);
-              progressIntervals.current.delete(searchId);
-            }
-            
-            return updatedSearch;
-          }
-          return search;
-        }));
-        
-        // Update global service status using the ref
-        const currentSearches = searchesRef.current;
-        const activeSearches = currentSearches.filter(s => s.isLoading);
-        if (activeSearches.length === 0) {
-          setServiceStatus('idle');
-        } else {
-          setServiceStatus('running');
-        }
-        
-      } catch (error) {
-        console.error('Error getting tracking progress:', error);
-        setSearches(prev => prev.map(search => 
-          search.id === searchId 
-            ? { ...search, isLoading: false, error: 'Failed to get progress' }
-            : search
-        ));
-        
-        // Clear interval on error
-        clearInterval(progressIntervals.current.get(searchId)!);
-        progressIntervals.current.delete(searchId);
-      }
-    }, 1000); // Update every 1 second for immediate feedback
-    
-    progressIntervals.current.set(searchId, interval);
   };
 
   const handleSearch = async () => {
@@ -398,11 +311,9 @@ function App() {
           : search
       ));
 
-      // Start monitoring this specific session
-      startSessionMonitoring(response.sessionId, searchId);
+      // Session monitoring is handled by global progress monitoring
 
     } catch (error) {
-      console.error('Error starting tracking:', error);
       setError(error instanceof Error ? error.message : 'Failed to start tracking');
       setSearches(prev => prev.map(search => 
         search.id === searchId 
@@ -425,9 +336,10 @@ function App() {
         }
       }
 
-      // Clear all progress monitoring intervals
-      progressIntervals.current.forEach(interval => clearInterval(interval));
-      progressIntervals.current.clear();
+      // Clear global progress monitoring
+      if (globalProgressInterval.current) {
+        clearInterval(globalProgressInterval.current);
+      }
 
       // Update all searches to not loading
       setSearches(prev => prev.map(search => ({ ...search, isLoading: false })));
@@ -435,7 +347,7 @@ function App() {
       setIsLoading(false);
       setServiceStatus('idle');
     } catch (error) {
-      console.error('Error stopping tracking:', error);
+      // Error stopping tracking
     }
   };
 
@@ -454,9 +366,10 @@ function App() {
   };
 
   const clearAllSearches = () => {
-    // Clear all intervals
-    progressIntervals.current.forEach(interval => clearInterval(interval));
-    progressIntervals.current.clear();
+    // Clear global progress monitoring
+    if (globalProgressInterval.current) {
+      clearInterval(globalProgressInterval.current);
+    }
     
     setSearches([]);
     setExpandedSearches(new Set());

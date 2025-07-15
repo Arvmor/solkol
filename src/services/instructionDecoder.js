@@ -5,7 +5,6 @@ export class InstructionDecoder {
   constructor() {
     this.logger = new Logger(config.logging.level);
     this.dexPrograms = config.dexPrograms;
-    this.debugCounter = 0;
   }
 
   decodeTransaction(transaction) {
@@ -35,17 +34,7 @@ export class InstructionDecoder {
       });
     }
 
-    // Debug logging for transactions with many instructions
-    if (decodedInstructions.length > 0) {
-      this.debugCounter++;
-      if (this.debugCounter % 50 === 0) { // Log every 50th transaction with DEX instructions
-        this.logger.debug('Found transaction with DEX instructions', {
-          totalInstructions: decodedInstructions.length,
-          dexInstructions: decodedInstructions.filter(inst => inst.dex).length,
-          dexTypes: [...new Set(decodedInstructions.filter(inst => inst.dex).map(inst => inst.dex))]
-        });
-      }
-    }
+
 
     return decodedInstructions;
   }

@@ -26,7 +26,6 @@ function promptForBlockNumber() {
       } else {
         const parsed = parseInt(blockNumber);
         if (isNaN(parsed) || parsed < 0) {
-          console.log('Invalid block number. Starting from current block.');
           resolve(null);
         } else {
           resolve(parsed);
@@ -118,6 +117,5 @@ Example token mint addresses:
 
 // Start the service
 main().catch(error => {
-  console.error('Failed to start:', error);
   process.exit(1);
 });

@@ -3,6 +3,8 @@ import { InstructionDecoder } from './instructionDecoder.js';
 import { TokenBuyTracker } from './tokenBuyTracker.js';
 import { Logger } from './logger.js';
 import { config } from '../config/index.js';
+import { isValidTokenMint } from '../utils/validation.js';
+import { setupGracefulShutdown } from '../utils/shutdown.js';
 
 export class TokenTrackingService {
   constructor() {
@@ -19,14 +21,13 @@ export class TokenTrackingService {
     };
 
     this.isRunning = false;
-    this.debugCounter = 0;
   }
 
   async start(targetToken, startingBlock = null) {
     this.logger.info('Starting Token Buy Tracking Service', { targetToken, startingBlock });
     
     // Validate token mint address
-    if (!this.isValidTokenMint(targetToken)) {
+    if (!isValidTokenMint(targetToken)) {
       this.logger.error('Invalid token mint address', { targetToken });
       return false;
     }
@@ -53,21 +54,7 @@ export class TokenTrackingService {
     return true;
   }
 
-  isValidTokenMint(tokenMint) {
-    // Basic validation for Solana token mint address
-    if (!tokenMint || typeof tokenMint !== 'string') {
-      return false;
-    }
-    
-    // Should be base58 encoded and around 32-44 characters
-    if (tokenMint.length < 32 || tokenMint.length > 44) {
-      return false;
-    }
-    
-    // Basic base58 character check
-    const base58Regex = /^[1-9A-HJ-NP-Za-km-z]+$/;
-    return base58Regex.test(tokenMint);
-  }
+
 
   async onNewBlock(block, slot) {
     // Skip blocks before our starting block if specified
@@ -111,18 +98,6 @@ export class TokenTrackingService {
           
           if (targetTokenChanges.length > 0) {
             transactionsWithTargetToken++;
-            this.debugCounter++;
-            
-            // Log every 5th transaction with target token for debugging
-            if (this.debugCounter % 5 === 0) {
-              this.logger.debug('Processing transaction with target token', {
-                signature: signature.substring(0, 8) + '...',
-                slot,
-                targetTokenChanges: targetTokenChanges.length,
-                allBalanceChanges: balanceChanges.length,
-                targetToken: this.buyTracker.targetToken
-              });
-            }
           }
           
           const buys = await this.buyTracker.detectBuysInTransaction(transaction, signature);
@@ -239,23 +214,10 @@ export class TokenTrackingService {
 
   // Graceful shutdown
   setupGracefulShutdown() {
-    const shutdown = () => {
-      this.logger.info('Received shutdown signal, stopping service...');
+    setupGracefulShutdown(this, this.logger, () => {
       if (this.buyTracker.getBuyCount() > 0) {
         this.displayResults();
       }
-      this.stop();
-      process.exit(0);
-    };
-
-    process.on('SIGINT', shutdown);
-    process.on('SIGTERM', shutdown);
-    process.on('uncaughtException', (error) => {
-      this.logger.error('Uncaught exception', { error: error.message, stack: error.stack });
-      shutdown();
-    });
-    process.on('unhandledRejection', (reason, promise) => {
-      this.logger.error('Unhandled rejection', { reason, promise });
     });
   }
 }
